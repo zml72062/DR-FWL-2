@@ -6,3 +6,6 @@ dist
 pygmmpp/
 pygmmpp.egg-info/
 .idea
+*.egg-info/
+processed/
+*.so
