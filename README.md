@@ -12,3 +12,11 @@ make
 
 To run the code on Substructure Counting dataset, one must first run `make` under directory `./software/cycle_count` to compile the C code into `.so` binary. After that one can directly import `counting_dataset.py` to get the dataset. Notice that *there may be issues associated with ABI compatibility*, and we only tested our program on x86-64 Linux and MacOS platforms.
 
+## Counting dataset
+
+To run the code on Substructure Counting dataset, one can run
+```
+python count_model.py --copy-data
+```
+
+This will copy the raw data and configure file into a new directory, preprocess data in that directory, and run the model.
