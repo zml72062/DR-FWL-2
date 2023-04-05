@@ -1,7 +1,6 @@
 from argparse import ArgumentParser
 from copy import deepcopy as c
-from typing import Dict, List
-
+from typing import Dict, List, Callable
 import pytorch_lightning as pl
 import torch
 import torch.nn as nn
@@ -25,19 +24,20 @@ class PlGNNModule(pl.LightningModule):
     """
 
     def __init__(self,
+                 model: nn.Module,
                  loss_criterion: nn.Module,
                  evaluator: Metric,
-                 args: ArgumentParser,
-                 init_encoder: nn.Module = None,
-                 edge_encoder: nn.Module = None,
+                 truth_fn: Callable,
+                 loader
                  ):
         super(PlGNNModule, self).__init__()
-        self.model = make_model(args, init_encoder, edge_encoder)
+        self.model = model
         self.loss_criterion = loss_criterion
         self.train_evaluator = c(evaluator)
         self.val_evaluator = c(evaluator)
         self.test_evaluator = c(evaluator)
-        self.args = args
+        self.loader = loader
+        self.truth_fn = truth_fn
 
     def forward(self,
                 data: Data) -> Tensor:
@@ -46,13 +46,13 @@ class PlGNNModule(pl.LightningModule):
     def training_step(self,
                       batch: Data,
                       batch_idx: Tensor) -> Dict:
-        y = batch.y.squeeze()
+        y = self.truth_fn(batch)
         out = self.model(batch).squeeze()
         loss = self.loss_criterion(out, y)
         self.log("train/loss",
                  loss,
                  prog_bar=True,
-                 batch_size=self.args.batch_size,
+                 batch_size=self.loader.train.batch_size,
                  sync_dist=True)
         return {'loss': loss, 'preds': out, 'target': y}
 
@@ -73,13 +73,13 @@ class PlGNNModule(pl.LightningModule):
                         batch: Data,
                         batch_idx: Tensor,
                         data_loader_idx: int) -> Dict:
-        y = batch.y.squeeze()
+        y = self.truth_fn(batch)
         out = self.model(batch).squeeze()
         loss = self.loss_criterion(out, y)
         self.log("val/loss",
                  loss,
                  prog_bar=False,
-                 batch_size=self.args.batch_size,
+                 batch_size=self.loader.train.batch_size,
                  sync_dist=True)
         return {'loss': loss, 'preds': out, 'target': y}
 
@@ -99,13 +99,13 @@ class PlGNNModule(pl.LightningModule):
     def test_step(self,
                   batch: Data,
                   batch_idx: Tensor) -> Dict:
-        y = batch.y.squeeze()
+        y = self.truth_fn(batch)
         out = self.model(batch).squeeze()
         loss = self.loss_criterion(out, y)
         self.log("test/loss",
                  loss,
                  prog_bar=False,
-                 batch_size=self.args.batch_size,
+                 batch_size=self.loader.train.batch_size,
                  sync_dist=True)
         return {'loss': loss, 'preds': out, 'target': y}
 
@@ -125,14 +125,17 @@ class PlGNNModule(pl.LightningModule):
     def configure_optimizers(self):
         optimizer = torch.optim.Adam(
             self.model.parameters(),
-            lr=self.args.lr,
-            weight_decay=self.args.l2_wd,
+            lr=self.loader.train.lr,
+            weight_decay=self.loader.train.l2_penalty,
         )
         return {
             "optimizer": optimizer,
             "lr_scheduler": {
                 "scheduler": torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    optimizer, factor=self.args.factor, patience=self.args.patience, min_lr=self.args.min_lr
+                    optimizer,
+                    factor=self.loader.train.lr_reduce_factor,
+                    patience=self.loader.train.lr_reduce_patience,
+                    min_lr=self.loader.train.lr_reduce_min
                 ),
                 "monitor": "val/metric",
                 "frequency": 1,
@@ -153,14 +156,18 @@ class PlGNNTestonValModule(PlGNNModule):
     """
 
     def __init__(self,
+                 model: nn.Module,
                  loss_criterion: nn.Module,
                  evaluator: Metric,
-                 args: ArgumentParser,
-                 init_encoder: nn.Module = None,
-                 edge_encoder: nn.Module = None,
+                 truth_fn: Callable,
+                 loader
                  ):
-        super().__init__(loss_criterion, evaluator, args, init_encoder, edge_encoder)
-        self.test_eval_still = self.args.test_eval_interval
+        super().__init__(model,
+                         loss_criterion,
+                         evaluator,
+                         truth_fn,
+                         loader)
+        self.test_eval_still = loader.train.test_eval_interval
 
     def validation_step(self,
                         batch: Data,
@@ -168,26 +175,26 @@ class PlGNNTestonValModule(PlGNNModule):
                         data_loader_idx: int) -> Dict:
 
         if data_loader_idx == 0:
-            y = batch.y
+            y = self.truth_fn(batch)
             out = self.model(batch)
             loss = self.loss_criterion(out, y)
             self.log("val/loss",
                      loss,
                      prog_bar=False,
-                     batch_size=self.args.batch_size,
+                     batch_size=self.loader.train.batch_size,
                      sync_dist=True,
                      add_dataloader_idx=False)
         else:
             if self.test_eval_still != 0:
                 return {'loader_idx': data_loader_idx}
             else:
-                y = batch.y
+                y = self.truth_fn(batch)
                 out = self.model(batch)
                 loss = self.loss_criterion(out, y)
                 self.log("test/loss",
                          loss,
                          prog_bar=False,
-                         batch_size=self.args.batch_size,
+                         batch_size=self.loader.train.batch_size,
                          sync_dist=True,
                          add_dataloader_idx=False)
         return {'loss': loss, 'preds': out, 'target': y, 'loader_idx': data_loader_idx}
@@ -220,7 +227,7 @@ class PlGNNTestonValModule(PlGNNModule):
                      prog_bar=True,
                      add_dataloader_idx=False)
             self.test_evaluator.reset()
-            self.test_eval_still = self.args.test_eval_interval
+            self.test_eval_still = self.loader.train.test_eval_interval
         else:
             self.test_eval_still = self.test_eval_still - 1
 

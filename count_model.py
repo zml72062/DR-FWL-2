@@ -1,29 +1,26 @@
 from pygmmpp.utils import compose
 from pygmmpp.nn.model import MLP
 from pygmmpp.data import DataLoader
-from model import (DR2FWL2Kernel, 
-                   NodeLevelPooling, 
-                   TwoComponentLinear, 
-                   TwoComponentReLU)
+from models.auxiliaries import TwoComponentLinear, TwoComponentReLU
+from models.pool import NodeLevelPooling
+from models.GNNs import DR2FWL2Kernel
+from pygmmpp.nn.model import MLP
 from counting_dataset import get_count_dataset
-from preprocess import (generate_k_hop_neighbor,
-                        generate_k_hop_neighbor_feature,
-                        generate_inverse_edge,
-                        generate_lkm_triangle)
-from json_loader import json_loader
-from save_result import copy
-from batch import collate
+from data_utils.preprocess import drfwl2_transform
+from train_utils import copy, json_loader
+from data_utils.batch import collate
 from torch_geometric.seed import seed_everything
 import argparse
 import torch
 import torch.nn as nn
-from torch.optim import SGD, Adam
+from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 import train
 import os.path as osp
 
+
 class CountModel(nn.Module):
-    def __init__(self, 
+    def __init__(self,
                  in_channels: int,
                  hidden_channels: int,
                  num_layers: int,
@@ -37,7 +34,7 @@ class CountModel(nn.Module):
                  post_mlp_num_layers: int = 2):
         super().__init__()
         self.lin = TwoComponentLinear(1, in_channels)
-        self.ker = DR2FWL2Kernel(in_channels, 
+        self.ker = DR2FWL2Kernel(in_channels,
                                  hidden_channels,
                                  num_layers,
                                  dropout,
@@ -54,7 +51,7 @@ class CountModel(nn.Module):
                             post_mlp_num_layers, 1, dropout,
                             residual=residual, norm=norm)
         self.reset_parameters()
-    
+
     def reset_parameters(self):
         self.lin.reset_parameters()
         self.ker.reset_parameters()
@@ -82,20 +79,10 @@ class CountModel(nn.Module):
                                          triangle_2_2_2,
                                          inverse_edge_1,
                                          inverse_edge_2)
-        print(edge_attr, edge_attr2)
         x = self.pool(edge_attr, edge_attr2,
                       edge_index, edge_index2, num_nodes)
         return self.post_mlp(x).squeeze()
 
-pretransform = compose(
-   [generate_k_hop_neighbor(2), 
-    generate_k_hop_neighbor_feature(2, False),
-    generate_lkm_triangle(1, 1, 1),
-    generate_lkm_triangle(1, 1, 2),
-    generate_lkm_triangle(1, 2, 2),
-    generate_lkm_triangle(2, 2, 2),
-    generate_inverse_edge(2)]
-)
 
     
 
@@ -139,13 +126,13 @@ if __name__ == '__main__':
     """
     train_dataset = get_count_dataset(root, loader.dataset.target,
                                       split='train',
-                                      pre_transform=pretransform)
+                                      pre_transform=drfwl2_transform())
     val_dataset = get_count_dataset(root, loader.dataset.target,
                                     split='val',
-                                    pre_transform=pretransform)
+                                    pre_transform=drfwl2_transform())
     test_dataset = get_count_dataset(root, loader.dataset.target,
                                      split='test',
-                                     pre_transform=pretransform)
+                                     pre_transform=drfwl2_transform())
     
     train_val = torch.cat([train_dataset.data_batch.__dict__[loader.dataset.target],
                            val_dataset.data_batch.__dict__[loader.dataset.target]]).to(torch.float)

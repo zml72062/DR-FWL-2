@@ -4,10 +4,13 @@ preprocess.py - Preprocessing for 2-DR-FWL(2)
 import torch
 from pygmmpp.utils.neighbor import k_hop_edge_index
 from pygmmpp.data import Data
-from triangle import get_lkm_triangles
-from batch import get_edge_index
-from inverse_edge import inverse_edge
-from typing import Callable, Dict
+from .triangle import get_lkm_triangles
+from .batch import get_edge_index
+from .inverse_edge import inverse_edge
+from typing import Callable, Dict, Optional
+from pygmmpp.utils import compose
+
+
 
 def generate_k_hop_neighbor(k: int) -> Callable:
     """
@@ -48,7 +51,7 @@ def generate_k_hop_neighbor_feature(k: int,
                 assert hasattr(data, 'x'), "Node feature absent!"
                 src, tgt = data.__dict__['edge_index'+str(hop)]
                 x = data.x
-                feature = x[src] * x[tgt]
+                feature = x[src] + x[tgt]
             else:
                 feature = torch.ones(
                     (data.__dict__['edge_index'+str(hop)].shape[1], 1)
@@ -64,7 +67,7 @@ def generate_k_hop_neighbor_feature(k: int,
                 assert hasattr(data, 'x'), "Node feature absent!"
                 src, tgt = data.edge_index
                 x = data.x
-                feature = x[src] * x[tgt]
+                feature = x[src] + x[tgt]
             else:
                 feature = torch.ones(
                     (data.edge_index.shape[1], 1)
@@ -75,7 +78,7 @@ def generate_k_hop_neighbor_feature(k: int,
             assert hasattr(data, 'x'), "Node feature absent!"
             src, tgt = data.edge_index
             x = data.x
-            feature = x[src] * x[tgt]
+            feature = x[src] + x[tgt]
             data.edge_attr = torch.cat([data.edge_attr, feature], dim=1)
         return data
     return inject_k_hop_attr
@@ -129,6 +132,18 @@ def generate_inverse_edge(l: int) -> Callable:
     return inject_inverse_edge_permutation
         
 
+def drfwl2_transform():
+    pretransform = compose(
+        [generate_k_hop_neighbor(2),
+         generate_k_hop_neighbor_feature(2, False),
+         generate_lkm_triangle(1, 1, 1),
+         generate_lkm_triangle(1, 1, 2),
+         generate_lkm_triangle(1, 2, 2),
+         generate_lkm_triangle(2, 2, 2),
+         generate_inverse_edge(2)]
+    )
+    return pretransform
+
 ###### As a comparison, we implemented NGNN preprocessing as below
 
 def ngnn_transform(k: int):
@@ -147,3 +162,4 @@ def ngnn_transform(k: int):
             data_list.append(Data(**kwargs))
         return Batch.from_data_list(data_list)
     return subgraph_batch
+
