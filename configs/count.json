@@ -13,7 +13,7 @@
         "mlp_num_layers": 1,
         "eps": 0.0,
         "eps2": 0.0,
-        "train_eps": false,
+        "train_eps": true,
         "post_mlp_num_layers": 2
     },
     "train": {
@@ -28,6 +28,8 @@
         "l2_penalty": 0.0,
         "lr_reduce_factor": 0.1,
         "lr_reduce_patience": 10,
-        "lr_reduce_min": 1e-5
+        "lr_reduce_min": 1e-5,
+        "num_workers": 4,
+        "test_eval_interval": 10
     }
 }
