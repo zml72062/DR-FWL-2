@@ -58,8 +58,9 @@ class DR2FWL2Conv(nn.Module):
             self.eps = nn.Parameter(torch.tensor([eps], dtype=torch.float))
             self.eps2 = nn.Parameter(torch.tensor([eps2], dtype=torch.float))
         else:
-            self.eps = torch.tensor([eps], dtype=torch.float)
-            self.eps2 = torch.tensor([eps2], dtype=torch.float)
+            self.register_buffer('eps', torch.Tensor([eps]))
+            self.register_buffer('eps2', torch.Tensor([eps2]))
+
         # the 8 mlps are for
         #       in 11->1, transform 1
         #       in 12->1, transform 1
@@ -69,8 +70,8 @@ class DR2FWL2Conv(nn.Module):
         #       in 12->2, transform 1
         #       in 12->2, transform 2
         #       in 22->2, transform 2
-        for _ in range(8):
-            self.mlps.append(MLP(in_channels, 
+        for _ in range(6):
+            self.mlps.append(MLP(in_channels * 2,
                                  hidden_channels,
                                  num_layers,
                                  in_channels,
@@ -104,15 +105,15 @@ class DR2FWL2Conv(nn.Module):
         ij222, ik222, kj222 = triangle_2_2_2
 
         multiset_111 = scatter(
-            self.mlps[0](edge_attr[ik111]) * self.mlps[0](edge_attr[kj111]),
+            self.mlps[0](torch.cat([edge_attr[ik111], edge_attr[kj111]], dim=-1)),
             ij111, dim=0, dim_size=num_edges, reduce='sum'
         )
         multiset_112 = scatter(
-            self.mlps[1](edge_attr[ik112]) * self.mlps[2](edge_attr2[kj112]),
+            self.mlps[1](torch.cat([edge_attr[ik112],edge_attr2[kj112]], dim=-1)),
             ij112, dim=0, dim_size=num_edges, reduce='sum'
         )
         multiset_122 = scatter(
-            self.mlps[3](edge_attr2[ik122]) * self.mlps[3](edge_attr2[kj122]),
+            self.mlps[2](torch.cat([edge_attr2[ik122],edge_attr2[kj122]], dim=-1)),
             ij122, dim=0, dim_size=num_edges, reduce='sum'
         )
         
@@ -120,21 +121,20 @@ class DR2FWL2Conv(nn.Module):
         multiset_112 + multiset_112[inverse_edge_1] + multiset_122
 
         multiset_211 = scatter(
-            self.mlps[4](edge_attr[ij112]) * self.mlps[4](edge_attr[ik112]),
+            self.mlps[3](torch.cat([edge_attr[ij112], edge_attr[ik112]], dim=-1)),
             kj112, dim=0, dim_size=num_edges2, reduce='sum'
         )
         multiset_212 = scatter(
-            self.mlps[5](edge_attr[ij122]) * self.mlps[6](edge_attr2[kj122]),
+            self.mlps[4](torch.cat([edge_attr[ij122], edge_attr2[kj122]], dim=-1)),
             ik122, dim=0, dim_size=num_edges2, reduce='sum'
         )
         multiset_222 = scatter(
-            self.mlps[7](edge_attr2[ik222]) * self.mlps[7](edge_attr2[kj222]),
+            self.mlps[5](torch.cat([edge_attr2[ik222], edge_attr2[kj222]], dim=-1)),
             ij222, dim=0, dim_size=num_edges2, reduce='sum'
         )
         
         edge_attr2 = edge_attr2 * (1 + self.eps2) + multiset_211 + \
         multiset_212 + multiset_212[inverse_edge_2] + multiset_222
-
         return edge_attr, edge_attr2
     
 class TwoComponentReLU(torch.nn.Module):
