@@ -1,0 +1,33 @@
+{
+    "dataset": {
+        "root": "datasets/count",
+        "target": "3-cycle"
+    },
+    "model": {
+        "in_channels": 32,
+        "hidden_channels": 64,
+        "num_layers": 4,
+        "residual": "cat",
+        "dropout": 0.0,
+        "norm": "batch_norm",
+        "mlp_num_layers": 1,
+        "eps": 0.0,
+        "eps2": 0.0,
+        "train_eps": false,
+        "post_mlp_num_layers": 2
+    },
+    "train": {
+        "seed": 42,
+        "batch_size": 128,
+        "cuda": -1,
+        "epochs": 300,
+        "lr": 0.0001,
+        "adam_beta1": 0.9,
+        "adam_beta2": 0.999,
+        "adam_eps": 1e-8,
+        "l2_penalty": 0.0,
+        "lr_reduce_factor": 0.1,
+        "lr_reduce_patience": 10,
+        "lr_reduce_min": 1e-5
+    }
+}
