@@ -8,19 +8,15 @@ from torch import Tensor
 from torch_geometric.data import Data
 from torchmetrics import Metric
 
-#TODO: Make a model buliding interface, save it as parameter in pl module.
-# Or set model as an initial input.
-#from models.model_construction import make_model
-
 
 class PlGNNModule(pl.LightningModule):
     """Basic pytorch lighting module for GNNs.
     Args:
+        model (nn.Module): Model to be trained or evaluated.
         loss_criterion (nn.Module) : Loss compute module.
         evaluator (Metric): Evaluator for evaluating model performance.
-        args (ArgumentParser): Arguments dict from argparser.
-        init_encoder (nn.Module): Node feature initial encoder.
-        edge_encoder (nn.Module): Edge feature encoder.
+        truth_fn (Callable): A function to get true label from batched_data.
+        loader (Dict): Arguments loader.
     """
 
     def __init__(self,
@@ -28,7 +24,7 @@ class PlGNNModule(pl.LightningModule):
                  loss_criterion: nn.Module,
                  evaluator: Metric,
                  truth_fn: Callable,
-                 loader
+                 loader: Dict
                  ):
         super(PlGNNModule, self).__init__()
         self.model = model
@@ -152,7 +148,11 @@ class PlGNNModule(pl.LightningModule):
 
 class PlGNNTestonValModule(PlGNNModule):
     """Given a preset evaluation interval, run test dataset when meet the interval.
-
+        model (nn.Module): Model to be trained or evaluated.
+        loss_criterion (nn.Module) : Loss compute module.
+        evaluator (Metric): Evaluator for evaluating model performance.
+        truth_fn (Callable): A function to get true label from batched_data.
+        loader (Dict): Arguments loader.
     """
 
     def __init__(self,

@@ -9,3 +9,4 @@ pygmmpp.egg-info/
 *.egg-info/
 processed/
 *.so
+jobs

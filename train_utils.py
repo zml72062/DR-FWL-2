@@ -3,12 +3,23 @@ Utils file for training.
 """
 
 import time
-import torch
-from torch_geometric.data import Data
 import os
 from datetime import datetime
-from typing import Optional
+from typing import Optional, Dict
 import json
+from collections.abc import MutableMapping
+
+
+def get_exp_name(loader: Dict) -> str:
+    r"""Get experiment name.
+    Args:
+        args (ArgumentParser): Arguments dict from argparser.
+    """
+
+    arg_list = [loader.dataset.root.split("/")[-1]]
+    arg_list.append(str(loader.dataset.target))
+    exp_name = "_".join(arg_list)
+    return exp_name + f"-{time.strftime('%Y%m%d%H%M%S')}"
 
 
 
@@ -26,7 +37,6 @@ def copy(config_path: str, save_dir: str,
     return dir
 
 
-
 class Loader:
     def __init__(self, d: dict):
         for key in d:
@@ -35,9 +45,16 @@ class Loader:
             else:
                 self.__setattr__(key, d[key])
 
-def json_loader(file: str):
+
+
+def load_json(file: str):
     with open(file) as f:
-        return Loader(json.load(f))
+        f = json.load(f)
+    return f
+
+def json_loader(f: dict):
+    return Loader(f)
+
 
 def get_seed(seed=234):
     r"""Return random seed based on current time.

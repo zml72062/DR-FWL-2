@@ -135,7 +135,7 @@ def generate_inverse_edge(l: int) -> Callable:
 def drfwl2_transform():
     pretransform = compose(
         [generate_k_hop_neighbor(2),
-         generate_k_hop_neighbor_feature(2, False),
+         #generate_k_hop_neighbor_feature(2, False),
          generate_lkm_triangle(1, 1, 1),
          generate_lkm_triangle(1, 1, 2),
          generate_lkm_triangle(1, 2, 2),

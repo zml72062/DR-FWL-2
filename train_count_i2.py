@@ -17,7 +17,7 @@ from pytorch_lightning.callbacks.progress import TQDMProgressBar
 import wandb
 from torchmetrics import MeanAbsoluteError
 import argparse
-from models.auxiliaries import TwoComponentLinear, TwoComponentReLU
+from models.auxiliaries import TwoComponentLinear
 from models.pool import NodeLevelPooling
 from models.GNNs import DR2FWL2Kernel
 from pygmmpp.nn.model import MLP
@@ -64,12 +64,14 @@ class CountModel(nn.Module):
         self.post_mlp.reset_parameters()
 
     def forward(self, batch) -> torch.Tensor:
-        edge_attr, edge_attr2, triangle_1_1_1, triangle_1_1_2, triangle_1_2_2, triangle_2_2_2, \
+        x, triangle_1_1_1, triangle_1_1_2, triangle_1_2_2, triangle_2_2_2, \
         inverse_edge_1, inverse_edge_2, edge_index, edge_index2, num_nodes = \
-        batch.edge_attr, batch.edge_attr2, batch.triangle_1_1_1, batch.triangle_1_1_2, batch.triangle_1_2_2, \
+        batch.x, batch.triangle_1_1_1, batch.triangle_1_1_2, batch.triangle_1_2_2, \
         batch.triangle_2_2_2, batch.inverse_edge_1, batch.inverse_edge_2, batch.edge_index, batch.edge_index2, batch.num_nodes
-        edge_attr, edge_attr2 = self.lin(edge_attr, edge_attr2)
-        #edge_attr, edge_attr2 = TwoComponentReLU()(edge_attr, edge_attr2)
+        x, x2 = self.lin(x, x)
+        edge_attr = x[edge_index[0]] + x[edge_index[1]]
+        edge_attr2 = x2[edge_index2[0]] + x2[edge_index2[1]]
+
         edge_attr, edge_attr2 = self.ker(edge_attr,
                                          edge_attr2,
                                          triangle_1_1_1,
@@ -102,7 +104,8 @@ def main():
     args = parser.parse_args()
 
     # Load configure file.
-    loader = train_utils.json_loader(args.config_path)
+    additional_args = train_utils.load_json(args.config_path)
+    loader = train_utils.json_loader(additional_args)
 
     # Copy necessary info for reproducing result.
     if args.copy_data:
@@ -140,32 +143,10 @@ def main():
                                                                           loader.dataset.target] - mean
                                                               ) / std
 
-    """
-    train_val = torch.cat([train_dataset.data_batch.__dict__[loader.dataset.target],
-                           val_dataset.data_batch.__dict__[loader.dataset.target]]).to(torch.float)
-    mean = train_val.mean(dim=0)
-    std = train_val.std(dim=0)
-
-    train_dataset.data_batch.__dict__[loader.dataset.target] = (
-                                                                       train_dataset.data_batch.__dict__[
-                                                                           loader.dataset.target] - mean
-                                                               ) / std
-    val_dataset.data_batch.__dict__[loader.dataset.target] = (
-                                                                     val_dataset.data_batch.__dict__[
-                                                                         loader.dataset.target] - mean
-                                                             ) / std
-    test_dataset.data_batch.__dict__[loader.dataset.target] = (
-                                                                      test_dataset.data_batch.__dict__[
-                                                                          loader.dataset.target] - mean
-                                                              ) / std    
-    
-    """
-
-
+    exp_name = train_utils.get_exp_name(loader)
     for i in range(1, args.runs + 1):
-        exp_name = "count_" + loader.dataset.target
         logger = WandbLogger(name=f'run_{str(i)}', project=exp_name, log_model=True, save_dir=root)
-        logger.log_hyperparams(loader.__dict__)
+        logger.log_hyperparams(additional_args)
         timer = Timer(duration=dict(weeks=4))
 
 

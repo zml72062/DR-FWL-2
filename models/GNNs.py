@@ -1,8 +1,7 @@
-import torch
 import torch.nn.functional as F
-from typing import Optional, Tuple
 from .gnn_conv import *
 from .auxiliaries import TwoComponentReLU
+from .utils import clones
 
 
 class DR2FWL2Kernel(torch.nn.Module):
@@ -62,12 +61,10 @@ class DR2FWL2Kernel(torch.nn.Module):
 
         """
         super().__init__()
+        lin = DR2FWL2Conv(in_channels, mlp_hidden_channels, mlp_num_layers,
+                    mlp_dropout, eps, eps2, train_eps, mlp_norm)
+        self.lins = clones(lin, num_layers)
 
-        self.lins = torch.nn.ModuleList()
-        for _ in range(num_layers):
-            self.lins.append(DR2FWL2ConvNew(
-                in_channels, mlp_hidden_channels, mlp_num_layers,
-                mlp_dropout, eps, eps2, train_eps, mlp_norm))
 
         if residual != 'cat':
             self.lins.append(torch.nn.Linear(
@@ -80,23 +77,16 @@ class DR2FWL2Kernel(torch.nn.Module):
             self.lins.append(torch.nn.Linear(
                 in_channels *num_layers, in_channels)) # for 2-hop
 
-        self.norms1 = torch.nn.ModuleList()
-        for _ in range(num_layers):
-            if norm is None:
-                self.norms1.append(torch.nn.Identity())
-            elif norm == 'batch_norm':
-                self.norms1.append(torch.nn.BatchNorm1d(in_channels))
-            elif norm == 'layer_norm':
-                self.norms1.append(torch.nn.LayerNorm(in_channels))
+        if norm is None:
+            norm = torch.nn.Identity()
+        elif norm == 'batch_norm':
+            norm = torch.nn.BatchNorm1d(in_channels)
+        elif norm == 'layer_norm':
+            norm = torch.nn.LayerNorm(in_channels)
 
-        self.norms2 = torch.nn.ModuleList()
-        for _ in range(num_layers):
-            if norm is None:
-                self.norms2.append(torch.nn.Identity())
-            elif norm == 'batch_norm':
-                self.norms2.append(torch.nn.BatchNorm1d(in_channels))
-            elif norm == 'layer_norm':
-                self.norms2.append(torch.nn.LayerNorm(in_channels))
+        self.norms1 = clones(norm, num_layers)
+        self.norms2 = clones(norm, num_layers)
+
 
         self.num_layers = num_layers
         self.in_channels = in_channels

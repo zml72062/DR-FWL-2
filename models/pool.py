@@ -13,8 +13,18 @@ class GraphLevelPooling(nn.Module):
         super().__init__()
 
     def forward(self, edge_attr: torch.Tensor,
-                edge_attr2: torch.Tensor) -> torch.Tensor:
-        return torch.mean(edge_attr, dim=0) + torch.mean(edge_attr2, dim=0)
+                edge_attr2: torch.Tensor,
+                edge_index: torch.LongTensor,
+                edge_index2: torch.LongTensor,
+                num_nodes: int,
+                batch) -> torch.Tensor:
+        node_emb = scatter(
+            edge_attr, edge_index[0], dim=0, dim_size=num_nodes, reduce='sum'
+        ) + scatter(
+            edge_attr2, edge_index2[0], dim=0, dim_size=num_nodes, reduce='sum'
+        )
+        return scatter(node_emb, batch, dim=0, reduce="mean")
+
 
 
 

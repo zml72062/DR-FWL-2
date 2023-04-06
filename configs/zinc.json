@@ -1,13 +1,12 @@
 {
     "dataset": {
-        "root": "datasets/count",
-        "target": "3-cycle"
+        "root": "datasets/zinc",
+        "target": "y"
     },
     "model": {
-        "in_channels": 64,
-        "hidden_channels": 64,
-        "num_layers": 5,
-        "residual": "cat",
+        "in_channels": 80,
+        "hidden_channels": 80,
+        "num_layers": 6,
         "dropout": 0.0,
         "norm": "batch_norm",
         "mlp_num_layers": 1,
@@ -18,17 +17,17 @@
     },
     "train": {
         "seed": 42,
-        "batch_size": 256,
+        "batch_size": 64,
         "cuda": -1,
-        "epochs": 2000,
-        "lr": 0.0001,
+        "epochs": 500,
+        "lr": 0.001,
         "adam_beta1": 0.9,
         "adam_beta2": 0.999,
         "adam_eps": 1e-8,
         "l2_penalty": 0.0,
-        "lr_reduce_factor": 0.9,
-        "lr_reduce_patience": 10,
-        "lr_reduce_min": 1e-5,
+        "lr_reduce_factor": 0.5,
+        "lr_reduce_patience": 20,
+        "lr_reduce_min": 1e-6,
         "num_workers": 4,
         "test_eval_interval": 10
     }

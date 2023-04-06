@@ -20,3 +20,10 @@ python count_model.py --copy-data
 ```
 
 This will copy the raw data and configure file into a new directory, preprocess data in that directory, and run the model.
+
+/05/2023: 
+1.Slightly revise the preprocessing, now the preprocessing will not compute initial feature for 1-hop/2-hop edge. This part is done in the model right now.
+2.Make zinc script runnable:
+```
+python train_zinc.py
+```
