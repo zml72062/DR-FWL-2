@@ -1,7 +1,9 @@
-import torch.nn.functional as F
+
 from .gnn_conv import *
-from .auxiliaries import TwoComponentReLU
 from .utils import clones
+from .mlp import MLP
+from .auxiliaries import MultipleComponentLinear
+
 
 
 class DR2FWL2Kernel(torch.nn.Module):
@@ -11,146 +13,119 @@ class DR2FWL2Kernel(torch.nn.Module):
     pooling layers as it is applied on different tasks.
     """
     def __init__(self,
-                 in_channels: int,
-                 mlp_hidden_channels: int,
+                 hidden_channels: int,
                  num_layers: int,
-                 dropout: float = 0,
-                 residual: Optional[str] = None,
-                 norm: Optional[str] = None,
-                 relu_first: bool = False,
-                 mlp_num_layers: int = 1,
-                 mlp_dropout: float = 0.0,
-                 eps: float = 0.0,
-                 eps2: float = 0.0,
-                 train_eps: bool = False,
-                 mlp_norm: Optional[str] = None):
-        """
-        Args:
+                 add_112: bool = True,
+                 add_212: bool = True,
+                 add_222: bool = True,
+                 add_vv: bool = False,
+                 eps: float = 0.,
+                 norm_type: str = "batch_norm",
+                 residual: str = "none",
+                 drop_prob: float = 0.0):
 
-        in_channels (int): Input edge-feature and 2-hop-edge-feature channels,
-        must be the same for 1-hop and 2-hop edges
-
-        mlp_hidden_channels (int): Hidden channels in MLP
-
-        num_layers (int): Number of `DR2FWL2Conv` layers
-
-        dropout (float): Dropout rate after applying a `DR2FWL2Conv` layer and
-        ReLU, default 0.0
-
-        residual (Optional[str]): Whether, and how to use skip connection among
-        `DR2FWL2Conv` layers, default None, can be None, 'cat' or 'add'
-
-        norm (Optional[str]): Normalization method after applying a `DR2FWL2Conv`
-        layer, default None, can be None, 'batch_norm' or 'layer_norm'
-
-        relu_first (bool): Whether to apply ReLU before normalization, default
-        False.
-
-        mlp_num_layers (int): Number of non-linear layers in MLP, default 1
-
-        mlp_dropout (float): Dropout rate after applying ReLU in MLP, default 0.0
-
-        eps, eps2 (float): `eps` value for 1-hop / 2-hop edges (see formula),
-        default 0.0 both
-
-        train_eps (bool): Whether to treat `eps` and `eps2` as trainable
-        parameters, default False
-
-        mlp_norm (Optional[str]): Normalization method for MLP, default None,
-        can be None, 'batch_norm' or 'layer_norm'
-
-        """
         super().__init__()
-        lin = DR2FWL2Conv(in_channels, mlp_hidden_channels, mlp_num_layers,
-                    mlp_dropout, eps, eps2, train_eps, mlp_norm)
-        self.lins = clones(lin, num_layers)
 
-
-        if residual != 'cat':
-            self.lins.append(torch.nn.Linear(
-                in_channels, in_channels)) # for 1-hop
-            self.lins.append(torch.nn.Linear(
-                in_channels, in_channels)) # for 2-hop
-        else:
-            self.lins.append(torch.nn.Linear(
-                in_channels *num_layers, in_channels)) # for 1-hop
-            self.lins.append(torch.nn.Linear(
-                in_channels *num_layers, in_channels)) # for 2-hop
-
-        if norm is None:
-            norm = torch.nn.Identity()
-        elif norm == 'batch_norm':
-            norm = torch.nn.BatchNorm1d(in_channels)
-        elif norm == 'layer_norm':
-            norm = torch.nn.LayerNorm(in_channels)
-
-        self.norms1 = clones(norm, num_layers)
-        self.norms2 = clones(norm, num_layers)
-
-
+        self.hidden_channels = hidden_channels
         self.num_layers = num_layers
-        self.in_channels = in_channels
-        self.out_channels = in_channels
-        self.dropout = dropout
-        self.relu_first = relu_first
+        self.add_112 = add_112
+        self.add_212 = add_212
+        self.add_222 = add_222
+        self.add_vv = add_vv
+        self.initial_eps = eps
+        self.norm_type = norm_type
         self.residual = residual
+        self.drop_prob = drop_prob
+
+
+        gnn = DR2FWL2Conv(self.hidden_channels,
+                          self.hidden_channels,
+                          self.add_112,
+                          self.add_212,
+                          self.add_222,
+                          self.add_vv,
+                          self.initial_eps,
+                          self.norm_type)
+
+        self.gnns = clones(gnn, num_layers)
+
+        if self.residual != 'cat':
+            self.out_lin = MultipleComponentLinear(self.hidden_channels,
+                                                   self.hidden_channels,
+                                                   self.drop_prob)
+
+        else:
+            self.out_lin = MultipleComponentLinear(self.hidden_channels * (1 + self.num_layers),
+                                                   self.hidden_channels,
+                                                   self.drop_prob)
 
         self.reset_parameters()
 
     def reset_parameters(self):
-        for lin in self.lins:
-            lin.reset_parameters()
-        for norm in self.norms1:
-            if hasattr(norm, 'reset_parameters'):
-                norm.reset_parameters()
-        for norm in self.norms2:
-            if hasattr(norm, 'reset_parameters'):
-                norm.reset_parameters()
+        for g in self.gnns:
+            g.reset_parameters()
+
+        self.out_lin.reset_parameters()
+
 
     def forward(self,
-                edge_attr: torch.Tensor,
+                edge_attr0: torch.Tensor,
+                edge_attr1: torch.Tensor,
                 edge_attr2: torch.Tensor,
+                edge_index0: torch.Tensor,
+                edge_index: torch.LongTensor,
+                edge_index2: torch.LongTensor,
+                triangle_0_1_1: torch.LongTensor,
                 triangle_1_1_1: torch.LongTensor,
                 triangle_1_1_2: torch.LongTensor,
                 triangle_1_2_2: torch.LongTensor,
                 triangle_2_2_2: torch.LongTensor,
                 inverse_edge_1: torch.LongTensor,
-                inverse_edge_2: torch.LongTensor) \
+                inverse_edge_2: torch.LongTensor,
+                edge_emb_list: list = None) \
             -> Tuple[torch.Tensor, torch.Tensor]:
-        if self.residual is not None:
-            emb_list = []
-            emb_list2 = []
+
+
+        emb_list0 = [edge_attr0]
+        emb_list1 = [edge_attr1]
+        emb_list2 = [edge_attr2]
 
         for i in range(self.num_layers):
-            edge_attr, edge_attr2 = self.lins[i](
-                edge_attr,
-                edge_attr2,
-                triangle_1_1_1,
-                triangle_1_1_2,
-                triangle_1_2_2,
-                triangle_2_2_2,
-                inverse_edge_1,
-                inverse_edge_2
-            )
-            if self.relu_first:
-                edge_attr, edge_attr2 = TwoComponentReLU()(edge_attr, edge_attr2)
-            edge_attr, edge_attr2 = (self.norms1[i](edge_attr),
-                                     self.norms2[i](edge_attr2))
-            if not self.relu_first:
-                edge_attr, edge_attr2 = TwoComponentReLU()(edge_attr, edge_attr2)
-            edge_attr, edge_attr2 = F.dropout(
-                edge_attr, p=self.dropout, training=self.training), F.dropout(
-                edge_attr2, p=self.dropout, training=self.training
-            )
+            edge_attr0 = emb_list0[i]
+            edge_attr1 = emb_list1[i]
+            edge_attr2 = emb_list2[i]
+            if edge_emb_list is not None:
+                edge_attr1 += edge_emb_list[i]
 
-            if self.residual is not None:
-                emb_list.append(edge_attr)
-                emb_list2.append(edge_attr2)
+            edge_attr0_out, edge_attr1_out, edge_attr2_out = self.gnns[i](edge_attr0,
+                                                                          edge_attr1,
+                                                                          edge_attr2,
+                                                                          edge_index0,
+                                                                          edge_index,
+                                                                          edge_index2,
+                                                                          triangle_0_1_1,
+                                                                          triangle_1_1_1,
+                                                                          triangle_1_1_2,
+                                                                          triangle_1_2_2,
+                                                                          triangle_2_2_2,
+                                                                          inverse_edge_1,
+                                                                          inverse_edge_2)
 
-        if self.residual is None:
-            return self.lins[-2](edge_attr), self.lins[-1](edge_attr2)
+            edge_attr0_out, edge_attr1_out, edge_attr2_out = F.dropout(
+                edge_attr0_out, p=self.drop_prob, training=self.training), F.dropout(
+                edge_attr1_out, p=self.drop_prob, training=self.training), F.dropout(
+                edge_attr2_out, p=self.drop_prob, training=self.training)
+
+            emb_list0.append(edge_attr0_out)
+            emb_list1.append(edge_attr1_out)
+            emb_list2.append(edge_attr2_out)
+
+        if self.residual == "last":
+            return self.out_lin((emb_list0[-1], emb_list1[-1], emb_list2[-1]))
         elif self.residual == 'add':
-            return self.lins[-2](sum(emb_list)), self.lins[-1](sum(emb_list2))
+            return self.out_lin((sum(emb_list0), sum(emb_list1), sum(emb_list2)))
         elif self.residual == 'cat':
-            return (self.lins[-2](torch.cat(emb_list, dim=-1)),
-                    self.lins[-1](torch.cat(emb_list2, dim=-1)))
+            return self.out_lin((torch.cat(emb_list0, dim=-1),
+                                torch.cat(emb_list1, dim=-1),
+                                torch.cat(emb_list2, dim=-1)))
+

@@ -8,65 +8,27 @@ import torch.nn.functional as F
 from typing import Optional, Tuple
 
 
-class TwoComponentReLU(torch.nn.Module):
-    """
-    Apply ReLU component-wise for Tuple[torch.Tensor, torch.Tensor]
-    """
+class MultipleComponentLinear(nn.Module):
+    """Linear projection with ELU activation for multiple components.
 
-    def __init__(self):
+    """
+    def __init__(self,
+                 in_channels: int,
+                 out_channels: int,
+                 drop_prob: float = 0.0):
         super().__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.drop_prob = drop_prob
+        self.linear = nn.Linear(in_channels, out_channels)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        self.linear.reset_parameters()
 
     def forward(self,
-                edge_attr: torch.Tensor,
-                edge_attr2: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        return F.relu(edge_attr), F.relu(edge_attr2)
+                x_tuple: Tuple) -> Tuple:
+        out_list = [F.elu(self.linear(x)) for x in x_tuple]
+        return tuple(out_list)
 
-
-class TwoComponentLinear(torch.nn.Module):
-    """
-    Apply nn.Linear component-wise for Tuple[torch.Tensor, torch.Tensor]
-    """
-
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.lin1 = nn.Linear(in_channels, out_channels)
-        self.lin2 = nn.Linear(in_channels, out_channels)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        self.lin1.reset_parameters()
-        self.lin2.reset_parameters()
-
-    def forward(self, edge_attr: torch.Tensor,
-                edge_attr2: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.lin1(edge_attr), self.lin2(edge_attr2)
-
-
-
-
-class TwoComponentEmbedding(torch.nn.Module):
-    """
-    Apply nn.Embeeding component-wise for Tuple[torch.Tensor, torch.Tensor]
-    """
-
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.lin1 = nn.Embedding(in_channels, out_channels)
-        self.lin2 = nn.Embedding(in_channels, out_channels)
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        self.lin1.reset_parameters()
-        self.lin2.reset_parameters()
-
-    def forward(self, edge_attr: torch.Tensor,
-                edge_attr2: torch.Tensor) -> Tuple[torch.Tensor, torch.Tensor]:
-        return self.lin1(edge_attr), self.lin2(edge_attr2)

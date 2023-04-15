@@ -86,8 +86,10 @@ batch.
 
 # A small helper function to find the correct "edge_index" name
 def get_edge_index(k: str) -> str:
-    return f'edge_index{k}' if k != '1' else 'edge_index'  
+    return f'edge_index{k}' if k != '1' else 'edge_index'
+    #return f'edge_index{k}'
 
 # A small helper function to find the correct "edge_slice" name
 def get_edge_slice(k: str) -> str:
     return f'{get_edge_index(k)}_slice' if k != '1' else 'edge_slice'
+    #return f'{get_edge_index(k)}_slice'

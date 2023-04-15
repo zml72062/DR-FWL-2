@@ -4,20 +4,20 @@
         "target": "y"
     },
     "model": {
-        "in_channels": 80,
         "hidden_channels": 80,
         "num_layers": 6,
         "dropout": 0.0,
         "norm": "batch_norm",
-        "mlp_num_layers": 1,
         "eps": 0.0,
-        "eps2": 0.0,
-        "train_eps": true,
-        "post_mlp_num_layers": 2
+        "add_112": true,
+        "add_212": true,
+        "add_222": true,
+        "add_vv": true,
+        "residual": "last"
     },
     "train": {
         "seed": 42,
-        "batch_size": 64,
+        "batch_size": 128,
         "cuda": -1,
         "epochs": 500,
         "lr": 0.001,
@@ -28,7 +28,7 @@
         "lr_reduce_factor": 0.5,
         "lr_reduce_patience": 20,
         "lr_reduce_min": 1e-6,
-        "num_workers": 4,
+        "num_workers": 0,
         "test_eval_interval": 10
     }
 }

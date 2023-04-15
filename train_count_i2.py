@@ -17,7 +17,6 @@ from pytorch_lightning.callbacks.progress import TQDMProgressBar
 import wandb
 from torchmetrics import MeanAbsoluteError
 import argparse
-from models.auxiliaries import TwoComponentLinear
 from models.pool import NodeLevelPooling
 from models.GNNs import DR2FWL2Kernel
 from pygmmpp.nn.model import MLP
@@ -27,61 +26,93 @@ from pygmmpp.nn.model import MLP
 
 class CountModel(nn.Module):
     def __init__(self,
-                 in_channels: int,
                  hidden_channels: int,
                  num_layers: int,
-                 residual: str = 'cat',
-                 dropout: float = 0.0,
-                 norm: str = 'batch_norm',
-                 mlp_num_layers: int = 1,
-                 eps: float = 0.0,
-                 eps2: float = 0.0,
-                 train_eps: bool = False,
-                 post_mlp_num_layers: int = 2):
+                 add_112: bool = True,
+                 add_212: bool = True,
+                 add_222: bool = True,
+                 add_vv: bool = False,
+                 eps: float = 0.,
+                 norm_type: str = "batch_norm",
+                 residual: str = "none",
+                 drop_prob: float = 0.0):
+
         super().__init__()
-        self.lin = TwoComponentLinear(1, in_channels)
-        self.ker = DR2FWL2Kernel(in_channels,
-                                 hidden_channels,
-                                 num_layers,
-                                 dropout,
-                                 residual=residual,
-                                 norm=norm,
-                                 mlp_num_layers=mlp_num_layers,
-                                 mlp_dropout=dropout,
-                                 eps=eps,
-                                 eps2=eps2,
-                                 train_eps=train_eps,
-                                 mlp_norm=norm)
+
+        self.hidden_channels = hidden_channels
+        self.num_layers = num_layers
+        self.add_112 = add_112
+        self.add_212 = add_212
+        self.add_222 = add_222
+        self.add_vv = add_vv
+        self.initial_eps = eps
+        self.norm_type = norm_type
+        self.residual = residual
+        self.drop_prob = drop_prob
+
+        self.initial_proj = nn.Linear(1, hidden_channels)
+        self.distance_encoding = nn.Embedding(2, hidden_channels)
+
+        self.ker = DR2FWL2Kernel(self.hidden_channels,
+                                 self.num_layers,
+                                 self.add_112,
+                                 self.add_212,
+                                 self.add_222,
+                                 self.add_vv,
+                                 self.initial_eps,
+                                 self.norm_type,
+                                 self.residual,
+                                 self.drop_prob)
+
         self.pool = NodeLevelPooling()
-        self.post_mlp = MLP(in_channels, hidden_channels,
-                            post_mlp_num_layers, 1, dropout,
-                            residual=residual, norm=norm)
+
+        self.post_mlp = nn.Sequential(nn.Linear(hidden_channels, hidden_channels // 2),
+                                       nn.ELU(),
+                                       nn.Linear(hidden_channels // 2, 1))
+
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.lin.reset_parameters()
+        self.initial_proj.reset_parameters()
+        self.distance_encoding.reset_parameters()
+
         self.ker.reset_parameters()
-        self.post_mlp.reset_parameters()
+        for m in self.post_mlp:
+            if hasattr(m, 'reset_parameters'):
+                m.reset_parameters()
 
     def forward(self, batch) -> torch.Tensor:
-        x, triangle_1_1_1, triangle_1_1_2, triangle_1_2_2, triangle_2_2_2, \
-        inverse_edge_1, inverse_edge_2, edge_index, edge_index2, num_nodes = \
-        batch.x, batch.triangle_1_1_1, batch.triangle_1_1_2, batch.triangle_1_2_2, \
-        batch.triangle_2_2_2, batch.inverse_edge_1, batch.inverse_edge_2, batch.edge_index, batch.edge_index2, batch.num_nodes
-        x, x2 = self.lin(x, x)
-        edge_attr = x[edge_index[0]] + x[edge_index[1]]
-        edge_attr2 = x2[edge_index2[0]] + x2[edge_index2[1]]
+        x, triangle_0_1_1, triangle_1_1_1, triangle_1_1_2, triangle_1_2_2, triangle_2_2_2, \
+        inverse_edge_1, inverse_edge_2, edge_index0, edge_index, edge_index2, num_nodes = \
+        batch.x, batch.triangle_0_1_1, \
+        batch.triangle_1_1_1, batch.triangle_1_1_2, batch.triangle_1_2_2, \
+        batch.triangle_2_2_2, batch.inverse_edge_1, batch.inverse_edge_2, \
+        batch.edge_index0, batch.edge_index, batch.edge_index2, batch.num_nodes
 
-        edge_attr, edge_attr2 = self.ker(edge_attr,
-                                         edge_attr2,
-                                         triangle_1_1_1,
-                                         triangle_1_1_2,
-                                         triangle_1_2_2,
-                                         triangle_2_2_2,
-                                         inverse_edge_1,
-                                         inverse_edge_2)
-        x = self.pool(edge_attr, edge_attr2,
-                      edge_index, edge_index2, num_nodes)
+        x = self.initial_proj(x)
+
+        edge_attr1 = self.distance_encoding(torch.zeros_like(edge_index[0]))
+        edge_attr2 = self.distance_encoding(torch.ones_like(edge_index2[0]))
+
+        edge_attr0 = x
+        edge_attr1 = edge_attr1 + x[edge_index[1]]
+        edge_attr2 = edge_attr2 + x[edge_index2[1]]
+
+
+        edge_attr0, edge_attr1, edge_attr2 = self.ker(edge_attr0,
+                                                      edge_attr1,
+                                                      edge_attr2,
+                                                      edge_index0,
+                                                      edge_index,
+                                                      edge_index2,
+                                                      triangle_0_1_1,
+                                                      triangle_1_1_1,
+                                                      triangle_1_1_2,
+                                                      triangle_1_2_2,
+                                                      triangle_2_2_2,
+                                                      inverse_edge_1,
+                                                      inverse_edge_2)
+        x = self.pool(edge_attr0, edge_attr1, edge_attr2, edge_index, edge_index2, num_nodes)
         x = self.post_mlp(x).squeeze()
         return x
 
@@ -166,19 +197,19 @@ def main():
         """
         Get the model.
         """
-        model = CountModel(loader.model.in_channels,
+        model = CountModel(
                            loader.model.hidden_channels,
                            loader.model.num_layers,
-                           loader.model.residual,
-                           loader.model.dropout,
-                           loader.model.norm,
-                           loader.model.mlp_num_layers,
+                           loader.model.add_112,
+                           loader.model.add_212,
+                           loader.model.add_222,
+                           loader.model.add_vv,
                            loader.model.eps,
-                           loader.model.eps2,
-                           loader.model.train_eps,
-                           loader.model.post_mlp_num_layers)
+                           loader.model.norm,
+                           loader.model.residual,
+                           loader.model.dropout)
 
-        #TODO: revise pl model module.
+
         modelmodule = PlGNNTestonValModule(model=model,
                                            loss_criterion=loss_cri,
                                            evaluator=evaluator,
