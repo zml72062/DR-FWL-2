@@ -28,11 +28,13 @@ class ZINCModel(nn.Module):
     def __init__(self,
                  hidden_channels: int,
                  num_layers: int,
+                 add_0: bool = True,
                  add_112: bool = True,
                  add_212: bool = True,
                  add_222: bool = True,
                  add_vv: bool = False,
                  eps: float = 0.,
+                 train_eps: bool = False,
                  norm_type: str = "batch_norm",
                  residual: str = "none",
                  drop_prob: float = 0.0):
@@ -41,11 +43,13 @@ class ZINCModel(nn.Module):
 
         self.hidden_channels = hidden_channels
         self.num_layers = num_layers
+        self.add_0 = add_0
         self.add_112 = add_112
         self.add_212 = add_212
         self.add_222 = add_222
         self.add_vv = add_vv
         self.initial_eps = eps
+        self.train_eps = train_eps
         self.norm_type = norm_type
         self.residual = residual
         self.drop_prob = drop_prob
@@ -57,11 +61,13 @@ class ZINCModel(nn.Module):
 
         self.ker = DR2FWL2Kernel(self.hidden_channels,
                                  self.num_layers,
+                                 self.add_0,
                                  self.add_112,
                                  self.add_212,
                                  self.add_222,
                                  self.add_vv,
                                  self.initial_eps,
+                                 self.train_eps,
                                  self.norm_type,
                                  self.residual,
                                  self.drop_prob)
@@ -98,8 +104,8 @@ class ZINCModel(nn.Module):
         edge_attr2 = self.distance_encoding(torch.ones_like(edge_index2[0]))
 
         edge_attr0 = x
-        edge_attr1 = edge_attr1 + x[edge_index[1]]
-        edge_attr2 = edge_attr2 + x[edge_index2[1]]
+        edge_attr1 = edge_attr1 + x[edge_index[1]] + x[edge_index[0]]
+        edge_attr2 = edge_attr2 + x[edge_index2[1]] + x[edge_index2[0]]
 
         edge_emb_list = [l(edge_feature) for l in self.edge_lins]
 
@@ -192,11 +198,13 @@ def main():
         model = ZINCModel(
                            loader.model.hidden_channels,
                            loader.model.num_layers,
+                           loader.model.add_0,
                            loader.model.add_112,
                            loader.model.add_212,
                            loader.model.add_222,
                            loader.model.add_vv,
                            loader.model.eps,
+                           loader.model.train_eps,
                            loader.model.norm,
                            loader.model.residual,
                            loader.model.dropout)

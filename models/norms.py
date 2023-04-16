@@ -2,6 +2,11 @@ import torch
 import torch.nn as nn
 
 class Normalization(nn.Module):
+    r"""Normalization layer.
+    Args:
+        out_channels (int): output size.
+        norm_type (str): Normalization type, choose from ("none", "batch_norm", "layer_norm").
+    """
     def __init__(self,
                  out_channels: int,
                  norm_type: str):

@@ -4,11 +4,13 @@
         "target": "y"
     },
     "model": {
-        "hidden_channels": 80,
+        "hidden_channels": 64,
         "num_layers": 6,
         "dropout": 0.0,
         "norm": "batch_norm",
         "eps": 0.0,
+        "train_eps": false,
+        "add_0": true,
         "add_112": true,
         "add_212": true,
         "add_222": true,
@@ -28,7 +30,7 @@
         "lr_reduce_factor": 0.5,
         "lr_reduce_patience": 20,
         "lr_reduce_min": 1e-6,
-        "num_workers": 0,
+        "num_workers": 4,
         "test_eval_interval": 10
     }
 }

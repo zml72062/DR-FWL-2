@@ -12,125 +12,137 @@ from .norms import Normalization
 from typing import Tuple
 
 class MultisetAggregation(nn.Module):
+    r"""Multiset aggregation module with elements of 2-sets.
+    Args:
+        in_channels (int): Input size.
+        out_channels (int): Output size.
+    """
     def __init__(self,
                  in_channels: int,
                  out_channels: int):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.proj = nn.Linear(self.in_channels * 2, self.out_channels)
+
         self.reset_parameters()
 
     def reset_parameters(self):
-        pass
+        self.proj.reset_parameters()
 
     def forward(self,
                 num_edges: int,
-                x_edge : torch.Tensor,
+                x_ik: torch.Tensor,
+                x_kj: torch.Tensor,
                 edge_index_ij: torch.LongTensor,
+                edge_index_ik: torch.LongTensor,
+                edge_index_kj: torch.LongTensor
                 ) -> torch.Tensor:
-        #x_ik = x_ik[edge_index_ik]
-        #x_kj = x_kj[edge_index_kj]
-        #x_edge = F.relu(x_ik + x_kj)
+
+        x_edge = F.relu(self.proj(torch.cat([x_ik[edge_index_ik], x_kj[edge_index_kj]], dim=-1)))
         out = scatter(x_edge, edge_index_ij, dim=0, dim_size=num_edges, reduce="sum")
         return out
 
 class DR2FWL2Conv(nn.Module):
-    r"""A new gnn conv for DRFWL2.
+    r"""Convolutional layer of distance restricted 2-FWL. The update formula is
+        ..math::
+        W(u, v) = \text{HASH}(W(u, v), ({{(W(w, v), W(u, w))|
+                w \in \mathcal{N}_{i}(u) \cap \mathcal{N}_{j}(v)}})_{0 \leq i, j \leq 2 })
     Args:
+        in_channels (int): input size.
+        out_channels (int): output size.
+        add_0 (bool): If true, add multiset aggregation involves root nodes.
+        add_112 (bool): If true, add all multiset aggregations for triangle 1-1-2.
+        add_212 (bool): If true, add all multiset aggregations for triangle 2-1-2.
+        add_222 (bool): If true, add all multiset aggregations for triangle 2-2-2.
+        add_vv (bool): If true, for each :math::W(u, v), add :math::W(v, v) as additional aggregation.
+                        Only works if add_0 is true.
+        eps (bool): Epsilon for distinguishing W(u, v) in aggregation, default is trainable.
+        norm_type (str): Normalization type after each layer, choose from ("none", "batch_norm", "layer_norm").
     """
 
     def __init__(self,
                  in_channels: int,
                  out_channels: int,
+                 add_0: bool = True,
                  add_112: bool = True,
                  add_212: bool = True,
                  add_222: bool = True,
                  add_vv: bool = False,
                  eps: float = 0.,
+                 train_eps: bool = False,
                  norm_type: str = "batch_norm"):
         super().__init__()
         self.in_channels = in_channels
         self.out_channels = out_channels
+        self.add_0 = add_0
         self.add_112 = add_112
         self.add_212 = add_212
         self.add_222 = add_222
         self.add_vv = add_vv
         self.initial_eps = eps
+        self.train_eps = train_eps
         self.norm_type = norm_type
 
         set_agg = MultisetAggregation(self.in_channels, self.out_channels)
         mlp = MLP(self.in_channels, self.out_channels, self.norm_type)
-        proj = nn.Linear(self.in_channels, self.out_channels)
         norm = Normalization(self.out_channels, self.norm_type)
-        eps = torch.nn.Parameter(torch.Tensor([self.initial_eps]))
+        if self.train_eps:
+            eps = torch.nn.Parameter(torch.Tensor([self.initial_eps]))
 
-        self.agg011 = c(set_agg)
+
+        self.agg0 = c(set_agg)
         self.mlp0 = c(mlp)
-        self.proj0 = c(proj)
         self.norm0 = c(norm)
-        self.eps0 = c(eps)
+        if self.train_eps:
+            self.eps0 = c(eps)
+        else:
+            self.register_buffer('eps0', torch.Tensor([self.initial_eps]))
 
-        self.agg111 = c(set_agg)
+        self.agg1 = c(set_agg)
         self.mlp1 = c(mlp)
-        self.proj1 = c(proj)
         self.norm1 = c(norm)
-        self.eps1 = c(eps)
+        if self.train_eps:
+            self.eps1 = c(eps)
+        else:
+            self.register_buffer('eps1', torch.Tensor([self.initial_eps]))
 
 
-        if self.add_112 or self.add_212 or self.add_222:
-            self.mlp2 = c(mlp)
-            self.proj2 = c(proj)
-            self.norm2 = c(norm)
+        self.agg2 = c(set_agg)
+        self.mlp2 = c(mlp)
+        self.norm2 = c(norm)
+        if self.train_eps:
             self.eps2 = c(eps)
-
-        if self.add_112:
-            self.agg112 = c(set_agg)
-            self.agg211 = c(set_agg)
-
-        if self.add_212:
-            self.agg122 = c(set_agg)
-            self.agg212 = c(set_agg)
-
-        if self.add_222:
-            self.agg222 = c(set_agg)
+        else:
+            self.register_buffer('eps2', torch.Tensor([self.initial_eps]))
 
         if self.add_vv:
             self.mlpvv = c(mlp)
             self.normvv = c(norm)
-            self.epsvv = c(eps)
+            if self.train_eps:
+                self.epsvv = c(eps)
+            else:
+                self.register_buffer('epsvv', torch.Tensor([self.initial_eps]))
 
         self.reset_parameters()
 
     def reset_parameters(self):
-        self.agg011.reset_parameters()
+        self.agg0.reset_parameters()
         self.mlp0.reset_parameters()
-        self.proj0.reset_parameters()
         self.norm0.reset_parameters()
         self.eps0.data.fill_(self.initial_eps)
 
-        self.agg111.reset_parameters()
+        self.agg1.reset_parameters()
         self.mlp1.reset_parameters()
-        self.proj1.reset_parameters()
         self.norm1.reset_parameters()
         self.eps1.data.fill_(self.initial_eps)
 
 
-        if self.add_112 or self.add_212 or self.add_222:
-            self.mlp2.reset_parameters()
-            self.proj2.reset_parameters()
-            self.norm2.reset_parameters()
-            self.eps2.data.fill_(self.initial_eps)
+        self.agg2.reset_parameters()
+        self.mlp2.reset_parameters()
+        self.norm2.reset_parameters()
+        self.eps2.data.fill_(self.initial_eps)
 
-        if self.add_112:
-            self.agg112.reset_parameters()
-            self.agg211.reset_parameters()
-
-        if self.add_212:
-            self.agg212.reset_parameters()
-            self.agg122.reset_parameters()
-
-        if self.add_222:
-            self.agg222.reset_parameters()
 
         if self.add_vv:
             self.mlpvv.reset_parameters()
@@ -169,37 +181,45 @@ class DR2FWL2Conv(nn.Module):
         edge_attr1_out = torch.zeros_like(edge_attr1)
         edge_attr2_out = torch.zeros_like(edge_attr2)
 
-        # edge attr 0
-        x_011_edge = F.relu(self.proj0(edge_attr1[ik011] + edge_attr1[ik011]))
-        edge_attr0_out += self.norm0(self.mlp0((1 + self.eps0) * edge_attr0 +
-                                     self.agg011(num_edge0, x_011_edge, ij011)))
 
-        x_111_edge = F.relu(self.proj1(edge_attr1[ik111] + edge_attr1[kj111]))
-        edge_attr1_out += self.agg111(num_edge1, x_111_edge, ij111)
+        if self.add_0:
+            #011
+            edge_attr0_out += self.agg0(num_edge0, edge_attr1, edge_attr1, ij011, ik011, kj011)
+            edge_attr0_out = self.norm0(self.mlp0((1 + self.eps0) * edge_attr0 + edge_attr0_out))
+
+            #101
+            edge_attr_101 = self.agg1(num_edge1, edge_attr0, edge_attr1, ik011, ij011, kj011)
+            edge_attr1_out += (edge_attr_101 + edge_attr_101[inverse_edge_1]) / 2
+
+        #111
+        edge_attr_111 = self.agg1(num_edge1, edge_attr1, edge_attr1, ij111, ik111, kj111)
+        edge_attr1_out += (edge_attr_111 + edge_attr_111[inverse_edge_1]) / 2
 
         if self.add_112:
-            x_112_edge = F.relu(self.proj1(edge_attr1[ik112] + edge_attr2[kj112]))
-            edge_attr_112 = self.agg112(num_edge1, x_112_edge, ij112)
-            edge_attr1_out += edge_attr_112 + edge_attr_112[inverse_edge_1]
-            x_211_edge = F.relu(self.proj2(edge_attr1[ij112] + edge_attr1[ik112]))
-            edge_attr2_out += self.agg211(num_edge2, x_211_edge, kj112)
+            #112
+            edge_attr_112 = self.agg1(num_edge1, edge_attr1, edge_attr2, ij112, ik112, kj112)
+            edge_attr1_out += (edge_attr_112 + edge_attr_112[inverse_edge_1]) / 2
+            #211
+            edge_attr_211 = self.agg2(num_edge2, edge_attr1, edge_attr1, kj112, ij112, ik112)
+            edge_attr2_out += (edge_attr_211 + edge_attr_211[inverse_edge_2]) / 2
 
         if self.add_212:
-            x_122_edge = F.relu(self.proj1(edge_attr2[ik122] + edge_attr2[kj122]))
-            edge_attr1_out += self.agg122(num_edge1, x_122_edge,  ij122)
-
-            x_212_edge = F.relu(self.proj2(edge_attr1[ij122] + edge_attr2[kj122]))
-            edge_attr_212 = self.agg212(num_edge2, x_212_edge, ik122)
-            edge_attr2_out += edge_attr_212 + edge_attr_212[inverse_edge_2]
+            #122
+            edge_attr_122 = self.agg1(num_edge1, edge_attr2, edge_attr2, ij122, ik122, kj122)
+            edge_attr1_out += (edge_attr_122 + edge_attr_122[inverse_edge_1]) / 2
+            #212
+            edge_attr_212 = self.agg2(num_edge2, edge_attr1, edge_attr2, ik122, ij122, kj122)
+            edge_attr2_out += (edge_attr_212 + edge_attr_212[inverse_edge_2]) / 2
 
         if self.add_222:
-            x_222_edge = F.relu(self.proj2(edge_attr2[ik222] + edge_attr2[kj222]))
-            edge_attr2_out += self.agg222(num_edge2, x_222_edge, ij222)
+            #222
+            edge_attr_222 = self.agg2(num_edge2, edge_attr2, edge_attr2, ij222, ik222, kj222)
+            edge_attr2_out += (edge_attr_222 + edge_attr_222[inverse_edge_2]) / 2
 
         edge_attr1_out = self.norm1(self.mlp1((1 + self.eps1) * edge_attr1 + edge_attr1_out))
         edge_attr2_out = self.norm2(self.mlp2((1 + self.eps2) * edge_attr2 + edge_attr2_out))
 
-        if self.add_vv:
+        if self.add_vv and self.add_0:
             vv_out = self.normvv(self.mlpvv((1 + self.epsvv) *
                                     torch.cat([edge_attr0, edge_attr1, edge_attr2], dim=0)
                                     + edge_attr0[torch.cat([edge_index0[1], edge_index[1], edge_index2[1]], dim=-1)]))

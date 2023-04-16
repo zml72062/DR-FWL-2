@@ -15,6 +15,7 @@ class MLP(nn.Module):
     Args:
         in_channels (int): Input feature size.
         out_channels (int): Output feature size.
+        norm_type (str): Normalization type, choose from ("none", "batch_norm", "layer_norm").
     """
 
     def __init__(self,

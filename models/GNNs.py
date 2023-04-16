@@ -1,3 +1,4 @@
+import torch
 
 from .gnn_conv import *
 from .utils import clones
@@ -7,32 +8,47 @@ from .auxiliaries import MultipleComponentLinear
 
 
 class DR2FWL2Kernel(torch.nn.Module):
-    """
-    Define a 2-Distance Restricted FWL(2) GNN kernel by stacking `DR2FWL2Conv`
-    layers. This kernel can be further combined with node-level/graph-level
-    pooling layers as it is applied on different tasks.
+    r"""Define a 2-Distance Restricted FWL(2) GNN kernel by stacking `DR2FWL2Conv`
+        layers. This kernel can be further combined with node-level/graph-level
+        pooling layers as it is applied on different tasks.
+    Args:
+        hidden_channels (int): Hidden size of the model.
+        num_layers (int): The number of DR2FWL2Conv layer.
+        add_0 (bool): If true, add multiset aggregation involves root nodes.
+        add_112 (bool): If true, add all multiset aggregations for triangle 1-1-2.
+        add_212 (bool): If true, add all multiset aggregations for triangle 2-1-2.
+        add_222 (bool): If true, add all multiset aggregations for triangle 2-2-2.
+        add_vv (bool): If true, for each :math::W(u, v), add :math::W(v, v) as additional aggregation.
+        eps (bool): Epsilon for distinguishing W(u, v) in aggregation, default is trainable.
+        norm_type (str): Normalization type after each layer, choose from ("none", "batch_norm", "layer_norm").
+        residual (str): Information aggregation schema for output from each layer. Choose from ("last", "add", "cat").
+        drop_prob (float): Dropout probability after each convolutional layer.
     """
     def __init__(self,
                  hidden_channels: int,
                  num_layers: int,
+                 add_0: bool = True,
                  add_112: bool = True,
                  add_212: bool = True,
                  add_222: bool = True,
                  add_vv: bool = False,
                  eps: float = 0.,
+                 train_eps: bool = False,
                  norm_type: str = "batch_norm",
-                 residual: str = "none",
+                 residual: str = "last",
                  drop_prob: float = 0.0):
 
         super().__init__()
 
         self.hidden_channels = hidden_channels
         self.num_layers = num_layers
+        self.add_0 = add_0
         self.add_112 = add_112
         self.add_212 = add_212
         self.add_222 = add_222
         self.add_vv = add_vv
         self.initial_eps = eps
+        self.train_eps = train_eps
         self.norm_type = norm_type
         self.residual = residual
         self.drop_prob = drop_prob
@@ -40,11 +56,13 @@ class DR2FWL2Kernel(torch.nn.Module):
 
         gnn = DR2FWL2Conv(self.hidden_channels,
                           self.hidden_channels,
+                          self.add_0,
                           self.add_112,
                           self.add_212,
                           self.add_222,
                           self.add_vv,
                           self.initial_eps,
+                          self.train_eps,
                           self.norm_type)
 
         self.gnns = clones(gnn, num_layers)

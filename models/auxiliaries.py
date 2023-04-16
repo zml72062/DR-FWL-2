@@ -9,8 +9,12 @@ from typing import Optional, Tuple
 
 
 class MultipleComponentLinear(nn.Module):
-    """Linear projection with ELU activation for multiple components.
-
+    r"""Linear projection with ELU activation for multiple input components.
+        Notes all components share the same set of parameters.
+    Args:
+        in_channels (int): Input size.
+        out_channels (int): Output size.
+        drop_prob (float): Dropout probability.
     """
     def __init__(self,
                  in_channels: int,

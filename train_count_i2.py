@@ -28,11 +28,13 @@ class CountModel(nn.Module):
     def __init__(self,
                  hidden_channels: int,
                  num_layers: int,
+                 add_0: bool = True,
                  add_112: bool = True,
                  add_212: bool = True,
                  add_222: bool = True,
                  add_vv: bool = False,
                  eps: float = 0.,
+                 train_eps: bool = False,
                  norm_type: str = "batch_norm",
                  residual: str = "none",
                  drop_prob: float = 0.0):
@@ -41,11 +43,13 @@ class CountModel(nn.Module):
 
         self.hidden_channels = hidden_channels
         self.num_layers = num_layers
+        self.add_0 = add_0
         self.add_112 = add_112
         self.add_212 = add_212
         self.add_222 = add_222
         self.add_vv = add_vv
         self.initial_eps = eps
+        self.train_eps = train_eps
         self.norm_type = norm_type
         self.residual = residual
         self.drop_prob = drop_prob
@@ -55,11 +59,13 @@ class CountModel(nn.Module):
 
         self.ker = DR2FWL2Kernel(self.hidden_channels,
                                  self.num_layers,
+                                 self.add_0,
                                  self.add_112,
                                  self.add_212,
                                  self.add_222,
                                  self.add_vv,
                                  self.initial_eps,
+                                 self.train_eps,
                                  self.norm_type,
                                  self.residual,
                                  self.drop_prob)
@@ -90,13 +96,12 @@ class CountModel(nn.Module):
         batch.edge_index0, batch.edge_index, batch.edge_index2, batch.num_nodes
 
         x = self.initial_proj(x)
-
         edge_attr1 = self.distance_encoding(torch.zeros_like(edge_index[0]))
         edge_attr2 = self.distance_encoding(torch.ones_like(edge_index2[0]))
 
         edge_attr0 = x
-        edge_attr1 = edge_attr1 + x[edge_index[1]]
-        edge_attr2 = edge_attr2 + x[edge_index2[1]]
+        edge_attr1 = edge_attr1 + x[edge_index[1]] + x[edge_index[0]]
+        edge_attr2 = edge_attr2 + x[edge_index2[1]] + x[edge_index2[0]]
 
 
         edge_attr0, edge_attr1, edge_attr2 = self.ker(edge_attr0,
@@ -176,7 +181,7 @@ def main():
 
     exp_name = train_utils.get_exp_name(loader)
     for i in range(1, args.runs + 1):
-        logger = WandbLogger(name=f'run_{str(i)}', project=exp_name, log_model=True, save_dir=root)
+        logger = WandbLogger(name=f'run_{str(i)}', project=exp_name, log_model=True, save_dir=args.save_dir)
         logger.log_hyperparams(additional_args)
         timer = Timer(duration=dict(weeks=4))
 
@@ -200,11 +205,13 @@ def main():
         model = CountModel(
                            loader.model.hidden_channels,
                            loader.model.num_layers,
+                           loader.model.add_0,
                            loader.model.add_112,
                            loader.model.add_212,
                            loader.model.add_222,
                            loader.model.add_vv,
                            loader.model.eps,
+                           loader.model.train_eps,
                            loader.model.norm,
                            loader.model.residual,
                            loader.model.dropout)
