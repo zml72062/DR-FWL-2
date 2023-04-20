@@ -9,15 +9,12 @@ class GraphLevelPooling(nn.Module):
     def __init__(self):
         super().__init__()
     def forward(self,
-                edge_attr0: torch.Tensor,
-                edge_attr1: torch.Tensor,
-                edge_attr2: torch.Tensor,
-                edge_index: torch.LongTensor,
-                edge_index2: torch.LongTensor,
+                edge_attr_list: list,
+                edge_index_list: list,
                 num_nodes: int,
                 batch) -> torch.Tensor:
-        node_emb = edge_attr0 + scatter(edge_attr1, edge_index[0], dim=0, dim_size=num_nodes, reduce='sum') + \
-                   scatter(edge_attr2, edge_index2[0], dim=0, dim_size=num_nodes, reduce='sum')
+        list_len = len(edge_attr_list)
+        node_emb = sum([scatter(edge_attr_list[i], edge_index_list[i][0], dim=0, dim_size=num_nodes, reduce='sum') for i in range(list_len)])
         return scatter(node_emb, batch, dim=0, reduce="mean")
 
 
@@ -30,14 +27,9 @@ class NodeLevelPooling(nn.Module):
         super().__init__()
 
     def forward(self,
-                edge_attr0: torch.Tensor,
-                edge_attr1: torch.Tensor,
-                edge_attr2: torch.Tensor,
-                edge_index: torch.LongTensor,
-                edge_index2: torch.LongTensor,
+                edge_attr_list: list,
+                edge_index_list: list,
                 num_nodes: int) -> torch.Tensor:
-        return edge_attr0 + scatter(
-            edge_attr1, edge_index[0], dim=0, dim_size=num_nodes, reduce='sum'
-        ) + scatter(
-            edge_attr2, edge_index2[0], dim=0, dim_size=num_nodes, reduce='sum'
-        )
+        list_len = len(edge_attr_list)
+        node_emb = sum([scatter(edge_attr_list[i], edge_index_list[i][0], dim=0, dim_size=num_nodes, reduce='sum') for i in range(list_len)])
+        return node_emb

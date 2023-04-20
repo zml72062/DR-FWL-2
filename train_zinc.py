@@ -15,9 +15,9 @@ from pytorch_lightning.callbacks.progress import TQDMProgressBar
 import torchmetrics
 import wandb
 import argparse
-from data_utils.preprocess import drfwl2_transform
+from data_utils.preprocess import drfwl2_transform_zinc
 from models.pool import GraphLevelPooling
-from models.GNNs import DR2FWL2Kernel
+from models.GNNs import DR2FWL2KernelZINC
 from models.utils import clones
 from pygmmpp.nn.model import MLP
 
@@ -32,6 +32,8 @@ class ZINCModel(nn.Module):
                  add_112: bool = True,
                  add_212: bool = True,
                  add_222: bool = True,
+                 add_321: bool = True,
+                 add_331: bool = True,
                  add_vv: bool = False,
                  eps: float = 0.,
                  train_eps: bool = False,
@@ -47,6 +49,8 @@ class ZINCModel(nn.Module):
         self.add_112 = add_112
         self.add_212 = add_212
         self.add_222 = add_222
+        self.add_321 = add_321
+        self.add_331 = add_331
         self.add_vv = add_vv
         self.initial_eps = eps
         self.train_eps = train_eps
@@ -55,22 +59,24 @@ class ZINCModel(nn.Module):
         self.drop_prob = drop_prob
 
         self.initial_proj = nn.Embedding(21, hidden_channels)
-        self.distance_encoding = nn.Embedding(2, hidden_channels)
+        self.distance_encoding = nn.Embedding(3, hidden_channels)
         edge_lin = nn.Embedding(4, hidden_channels)
         self.edge_lins = clones(edge_lin, hidden_channels)
 
-        self.ker = DR2FWL2Kernel(self.hidden_channels,
-                                 self.num_layers,
-                                 self.add_0,
-                                 self.add_112,
-                                 self.add_212,
-                                 self.add_222,
-                                 self.add_vv,
-                                 self.initial_eps,
-                                 self.train_eps,
-                                 self.norm_type,
-                                 self.residual,
-                                 self.drop_prob)
+        self.ker = DR2FWL2KernelZINC(self.hidden_channels,
+                                     self.num_layers,
+                                     self.add_0,
+                                     self.add_112,
+                                     self.add_212,
+                                     self.add_222,
+                                     self.add_321,
+                                     self.add_331,
+                                     self.add_vv,
+                                     self.initial_eps,
+                                     self.train_eps,
+                                     self.norm_type,
+                                     self.residual,
+                                     self.drop_prob)
 
         self.pool = GraphLevelPooling()
 
@@ -91,39 +97,49 @@ class ZINCModel(nn.Module):
                 m.reset_parameters()
 
     def forward(self, batch) -> torch.Tensor:
-        x, edge_feature, triangle_0_1_1, triangle_1_1_1, triangle_1_1_2, triangle_1_2_2, triangle_2_2_2, \
-        inverse_edge_1, inverse_edge_2, edge_index0, edge_index, edge_index2, num_nodes, batch = \
+        x, edge_feature, triangle_0_1_1, triangle_1_1_1, triangle_1_1_2, triangle_1_2_2, triangle_2_2_2, triangle_3_2_1, triangle_3_3_1, \
+        inverse_edge_1, inverse_edge_2, inverse_edge_3, edge_index0, edge_index, edge_index2, edge_index3, num_nodes, batch = \
         batch.x, batch.edge_attr, batch.triangle_0_1_1, \
         batch.triangle_1_1_1, batch.triangle_1_1_2, batch.triangle_1_2_2, \
-        batch.triangle_2_2_2, batch.inverse_edge_1, batch.inverse_edge_2, \
-        batch.edge_index0, batch.edge_index, batch.edge_index2, batch.num_nodes, batch.batch0
+        batch.triangle_2_2_2, batch.triangle_3_2_1, batch.triangle_3_3_1, batch.inverse_edge_1, batch.inverse_edge_2, batch.inverse_edge_3,\
+        batch.edge_index0, batch.edge_index, batch.edge_index2, batch.edge_index3, batch.num_nodes, batch.batch0
         x = x.squeeze()
         x = self.initial_proj(x)
-
         edge_attr1 = self.distance_encoding(torch.zeros_like(edge_index[0]))
         edge_attr2 = self.distance_encoding(torch.ones_like(edge_index2[0]))
+        edge_attr3 = self.distance_encoding(torch.ones_like(edge_index3[0]) * 2)
+
 
         edge_attr0 = x
         edge_attr1 = edge_attr1 + x[edge_index[1]] + x[edge_index[0]]
         edge_attr2 = edge_attr2 + x[edge_index2[1]] + x[edge_index2[0]]
+        edge_attr3 = edge_attr3 + x[edge_index3[1]] + x[edge_index3[0]]
+
 
         edge_emb_list = [l(edge_feature) for l in self.edge_lins]
 
-        edge_attr0, edge_attr1, edge_attr2 = self.ker(edge_attr0,
-                                                      edge_attr1,
-                                                      edge_attr2,
-                                                      edge_index0,
-                                                      edge_index,
-                                                      edge_index2,
-                                                      triangle_0_1_1,
-                                                      triangle_1_1_1,
-                                                      triangle_1_1_2,
-                                                      triangle_1_2_2,
-                                                      triangle_2_2_2,
-                                                      inverse_edge_1,
-                                                      inverse_edge_2,
-                                                      edge_emb_list)
-        x = self.pool(edge_attr0, edge_attr1, edge_attr2, edge_index, edge_index2, num_nodes, batch)
+        edge_attr0, edge_attr1, edge_attr2, edge_attr3 = self.ker(edge_attr0,
+                                                                  edge_attr1,
+                                                                  edge_attr2,
+                                                                  edge_attr3,
+                                                                  edge_index0,
+                                                                  edge_index,
+                                                                  edge_index2,
+                                                                  edge_index3,
+                                                                  triangle_0_1_1,
+                                                                  triangle_1_1_1,
+                                                                  triangle_1_1_2,
+                                                                  triangle_1_2_2,
+                                                                  triangle_2_2_2,
+                                                                  triangle_3_2_1,
+                                                                  triangle_3_3_1,
+                                                                  inverse_edge_1,
+                                                                  inverse_edge_2,
+                                                                  inverse_edge_3,
+                                                                  edge_emb_list)
+        x = self.pool([edge_attr0, edge_attr1, edge_attr2, edge_attr3],
+                      [edge_index0, edge_index, edge_index2, edge_index3],
+                      num_nodes, batch)
         x = self.post_mlp(x).squeeze()
         return x
 
@@ -160,17 +176,17 @@ def main():
     train_dataset = ZINC(root,
                          subset=True,
                          split="train",
-                         pre_transform=drfwl2_transform())
+                         pre_transform=drfwl2_transform_zinc())
 
     val_dataset = ZINC(root,
                        subset=True,
                        split="val",
-                       pre_transform=drfwl2_transform())
+                       pre_transform=drfwl2_transform_zinc())
 
     test_dataset = ZINC(root,
                         subset=True,
                         split="test",
-                        pre_transform=drfwl2_transform())
+                        pre_transform=drfwl2_transform_zinc())
 
     exp_name = train_utils.get_exp_name(loader)
     for i in range(1, args.runs + 1):
@@ -202,6 +218,8 @@ def main():
                            loader.model.add_112,
                            loader.model.add_212,
                            loader.model.add_222,
+                           loader.model.add_321,
+                           loader.model.add_331,
                            loader.model.add_vv,
                            loader.model.eps,
                            loader.model.train_eps,

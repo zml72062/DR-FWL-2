@@ -117,7 +117,9 @@ class CountModel(nn.Module):
                                                       triangle_2_2_2,
                                                       inverse_edge_1,
                                                       inverse_edge_2)
-        x = self.pool(edge_attr0, edge_attr1, edge_attr2, edge_index, edge_index2, num_nodes)
+        x = self.pool([edge_attr0, edge_attr1, edge_attr2],
+                      [edge_index0, edge_index, edge_index2],
+                      num_nodes)
         x = self.post_mlp(x).squeeze()
         return x
 
