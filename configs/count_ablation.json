@@ -1,0 +1,36 @@
+{
+    "dataset": {
+        "root": "datasets/count",
+        "target": "6-cycle"
+    },
+    "model": {
+        "hidden_channels": 64,
+        "num_layers": 5,
+        "dropout": 0.0,
+        "norm": "none",
+        "in_layer_norm": "none",
+        "eps": 0.0,
+        "train_eps": false,
+        "add_0": true,
+        "add_112": true,
+        "add_212": true,
+        "add_222": true,
+        "residual": "last"
+    },
+    "train": {
+        "seed": 42,
+        "batch_size": 256,
+        "cuda": 0,
+        "epochs": 2000,
+        "lr": 0.001,
+        "adam_beta1": 0.9,
+        "adam_beta2": 0.999,
+        "adam_eps": 1e-8,
+        "l2_penalty": 0.0,
+        "lr_reduce_factor": 0.9,
+        "lr_reduce_patience": 10,
+        "lr_reduce_min": 1e-5,
+        "num_workers": 0,
+        "test_eval_interval": 20
+    }
+}
