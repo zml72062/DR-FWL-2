@@ -142,34 +142,14 @@ def add_root_edges(data: Data) -> Data:
 def drfwl2_transform():
     pretransform = compose(
         [generate_k_hop_neighbor(2),
-         add_root_edges,
+        #  add_root_edges,
          #generate_k_hop_neighbor_feature(2, False),
-         generate_lkm_triangle(0, 1, 1),
+        #  generate_lkm_triangle(0, 1, 1),
          generate_lkm_triangle(1, 1, 1),
          generate_lkm_triangle(1, 1, 2),
-         generate_lkm_triangle(1, 2, 2),
+         generate_lkm_triangle(2, 2, 1),
          generate_lkm_triangle(2, 2, 2),
          generate_inverse_edge(2)]
-    )
-    return pretransform
-
-
-def drfwl2_transform_zinc():
-    pretransform = compose(
-        [generate_k_hop_neighbor(3),
-         add_root_edges,
-         #generate_k_hop_neighbor_feature(2, False),
-         generate_lkm_triangle(0, 1, 1),
-         generate_lkm_triangle(1, 1, 1),
-         generate_lkm_triangle(1, 1, 2),
-         generate_lkm_triangle(1, 2, 2),
-         generate_lkm_triangle(2, 2, 2),
-         generate_lkm_triangle(3, 2, 1),
-         generate_lkm_triangle(3, 3, 1),
-         generate_lkm_triangle(3, 2, 2),
-         generate_lkm_triangle(3, 3, 2),
-         generate_lkm_triangle(3, 3, 3),
-         generate_inverse_edge(3)]
     )
     return pretransform
 
