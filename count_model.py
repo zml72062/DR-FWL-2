@@ -14,7 +14,7 @@ import train
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from models.pool import NodeLevelPooling
-from models.gnn_count import DR2FWL2Kernel
+from models.GNNs import DR2FWL2Kernel
 from pygmmpp.data import DataLoader
 
 # os.environ["CUDA_LAUNCH_BLOCKING"]="1"

@@ -32,10 +32,10 @@ class CountModel(nn.Module):
                  add_112: bool = True,
                  add_212: bool = True,
                  add_222: bool = True,
-                 add_vv: bool = False,
                  eps: float = 0.,
                  train_eps: bool = False,
                  norm_type: str = "batch_norm",
+                 norm_between_layers: str = "batch_norm",
                  residual: str = "none",
                  drop_prob: float = 0.0):
 
@@ -47,7 +47,6 @@ class CountModel(nn.Module):
         self.add_112 = add_112
         self.add_212 = add_212
         self.add_222 = add_222
-        self.add_vv = add_vv
         self.initial_eps = eps
         self.train_eps = train_eps
         self.norm_type = norm_type
@@ -59,22 +58,29 @@ class CountModel(nn.Module):
 
         self.ker = DR2FWL2Kernel(self.hidden_channels,
                                  self.num_layers,
-                                 self.add_0,
-                                 self.add_112,
-                                 self.add_212,
-                                 self.add_222,
-                                 self.add_vv,
                                  self.initial_eps,
                                  self.train_eps,
                                  self.norm_type,
+                                 norm_between_layers,
                                  self.residual,
                                  self.drop_prob)
 
         self.pool = NodeLevelPooling()
 
         self.post_mlp = nn.Sequential(nn.Linear(hidden_channels, hidden_channels // 2),
-                                       nn.ELU(),
-                                       nn.Linear(hidden_channels // 2, 1))
+                                      nn.ELU(),
+                                      nn.Linear(hidden_channels // 2, 1))
+
+        self.ker.add_aggr(1, 1, 1)
+        if self.add_0:
+            self.ker.add_aggr(0, 1, 1)
+            self.ker.add_aggr(0, 2, 2)
+        if self.add_112:
+            self.ker.add_aggr(1, 1, 2)
+        if self.add_212:
+            self.ker.add_aggr(2, 2, 1)
+        if self.add_222:
+            self.ker.add_aggr(2, 2, 2)
 
         self.reset_parameters()
 
@@ -88,41 +94,26 @@ class CountModel(nn.Module):
                 m.reset_parameters()
 
     def forward(self, batch) -> torch.Tensor:
-        x, triangle_0_1_1, triangle_1_1_1, triangle_1_1_2, triangle_1_2_2, triangle_2_2_2, \
-        inverse_edge_1, inverse_edge_2, edge_index0, edge_index, edge_index2, num_nodes = \
-        batch.x, batch.triangle_0_1_1, \
-        batch.triangle_1_1_1, batch.triangle_1_1_2, batch.triangle_1_2_2, \
-        batch.triangle_2_2_2, batch.inverse_edge_1, batch.inverse_edge_2, \
-        batch.edge_index0, batch.edge_index, batch.edge_index2, batch.num_nodes
+        edge_indices = [batch.edge_index, batch.edge_index2]
+        edge_attrs = [self.initial_proj(batch.x),
+                      self.distance_encoding(torch.zeros_like(edge_indices[0][0])),
+                      self.distance_encoding(torch.ones_like(edge_indices[1][0]))]
+        triangles = {
+            (1, 1, 1): batch.triangle_1_1_1,
+            (1, 1, 2): batch.triangle_1_1_2,
+            (2, 2, 1): batch.triangle_2_2_1,
+            (2, 2, 2): batch.triangle_2_2_2,
+        }
+        inverse_edges = [batch.inverse_edge_1, batch.inverse_edge_2]
 
-        x = self.initial_proj(x)
-        edge_attr1 = self.distance_encoding(torch.zeros_like(edge_index[0]))
-        edge_attr2 = self.distance_encoding(torch.ones_like(edge_index2[0]))
+        edge_attrs = self.ker(edge_attrs,
+                              edge_indices,
+                              triangles,
+                              inverse_edges)
 
-        edge_attr0 = x
-        edge_attr1 = edge_attr1 + x[edge_index[1]] + x[edge_index[0]]
-        edge_attr2 = edge_attr2 + x[edge_index2[1]] + x[edge_index2[0]]
-
-
-        edge_attr0, edge_attr1, edge_attr2 = self.ker(edge_attr0,
-                                                      edge_attr1,
-                                                      edge_attr2,
-                                                      edge_index0,
-                                                      edge_index,
-                                                      edge_index2,
-                                                      triangle_0_1_1,
-                                                      triangle_1_1_1,
-                                                      triangle_1_1_2,
-                                                      triangle_1_2_2,
-                                                      triangle_2_2_2,
-                                                      inverse_edge_1,
-                                                      inverse_edge_2)
-        x = self.pool([edge_attr0, edge_attr1, edge_attr2],
-                      [edge_index0, edge_index, edge_index2],
-                      num_nodes)
+        x = self.pool(edge_attrs, edge_indices, batch.num_nodes)
         x = self.post_mlp(x).squeeze()
         return x
-
 
 def main():
     """
@@ -205,18 +196,18 @@ def main():
         Get the model.
         """
         model = CountModel(
-                           loader.model.hidden_channels,
-                           loader.model.num_layers,
-                           loader.model.add_0,
-                           loader.model.add_112,
-                           loader.model.add_212,
-                           loader.model.add_222,
-                           loader.model.add_vv,
-                           loader.model.eps,
-                           loader.model.train_eps,
-                           loader.model.norm,
-                           loader.model.residual,
-                           loader.model.dropout)
+                loader.model.hidden_channels,
+                loader.model.num_layers,
+                loader.model.add_0,
+                loader.model.add_112,
+                loader.model.add_212,
+                loader.model.add_222,
+                loader.model.eps,
+                loader.model.train_eps,
+                loader.model.norm,
+                loader.model.in_layer_norm,
+                loader.model.residual,
+                loader.model.dropout)
 
 
         modelmodule = PlGNNTestonValModule(model=model,

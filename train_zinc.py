@@ -17,11 +17,10 @@ import wandb
 import argparse
 from data_utils.preprocess import drfwl2_transform_zinc
 from models.pool import GraphLevelPooling
-from models.GNNs import DR2FWL2KernelZINC
+from models.GNNs import DR2FWL2Kernel
 from models.utils import clones
-from pygmmpp.nn.model import MLP
-
-# os.environ["CUDA_LAUNCH_BLOCKING"]="1"
+#import os
+#os.environ["CUDA_LAUNCH_BLOCKING"]="1"
 
 
 class ZINCModel(nn.Module):
@@ -32,12 +31,15 @@ class ZINCModel(nn.Module):
                  add_112: bool = True,
                  add_212: bool = True,
                  add_222: bool = True,
-                 add_321: bool = True,
                  add_331: bool = True,
-                 add_vv: bool = False,
+                 add_321: bool = False,
+                 add_322: bool = False,
+                 add_332: bool = False,
+                 add_333: bool = False,
                  eps: float = 0.,
                  train_eps: bool = False,
                  norm_type: str = "batch_norm",
+                 norm_between_layers: str = "batch_norm",
                  residual: str = "none",
                  drop_prob: float = 0.0):
 
@@ -49,9 +51,11 @@ class ZINCModel(nn.Module):
         self.add_112 = add_112
         self.add_212 = add_212
         self.add_222 = add_222
-        self.add_321 = add_321
         self.add_331 = add_331
-        self.add_vv = add_vv
+        self.add_321 = add_321
+        self.add_322 = add_322
+        self.add_332 = add_332
+        self.add_333 = add_333
         self.initial_eps = eps
         self.train_eps = train_eps
         self.norm_type = norm_type
@@ -63,26 +67,43 @@ class ZINCModel(nn.Module):
         edge_lin = nn.Embedding(4, hidden_channels)
         self.edge_lins = clones(edge_lin, hidden_channels)
 
-        self.ker = DR2FWL2KernelZINC(self.hidden_channels,
-                                     self.num_layers,
-                                     self.add_0,
-                                     self.add_112,
-                                     self.add_212,
-                                     self.add_222,
-                                     self.add_321,
-                                     self.add_331,
-                                     self.add_vv,
-                                     self.initial_eps,
-                                     self.train_eps,
-                                     self.norm_type,
-                                     self.residual,
-                                     self.drop_prob)
+        self.ker = DR2FWL2Kernel(self.hidden_channels,
+                                 self.num_layers,
+                                 self.initial_eps,
+                                 self.train_eps,
+                                 self.norm_type,
+                                 norm_between_layers,
+                                 self.residual,
+                                 self.drop_prob,
+                                 True)
 
-        self.pool = GraphLevelPooling()
+        self.pool = GraphLevelPooling(self.hidden_channels)
 
         self.post_mlp = nn.Sequential(nn.Linear(hidden_channels, hidden_channels // 2),
-                                       nn.ELU(),
-                                       nn.Linear(hidden_channels // 2, 1))
+                                      nn.ELU(),
+                                      nn.Linear(hidden_channels // 2, 1))
+
+        self.ker.add_aggr(1, 1, 1)
+        if self.add_0:
+            self.ker.add_aggr(0, 1, 1)
+            self.ker.add_aggr(0, 2, 2)
+        if self.add_112:
+            self.ker.add_aggr(1, 1, 2)
+        if self.add_212:
+            self.ker.add_aggr(2, 2, 1)
+        if self.add_222:
+            self.ker.add_aggr(2, 2, 2)
+        if self.add_321:
+            self.ker.add_aggr(3, 2, 1)
+        if self.add_331:
+            self.ker.add_aggr(3, 3, 1)
+        if self.add_322:
+            self.ker.add_aggr(3, 2, 2)
+        if self.add_332:
+            self.ker.add_aggr(3, 3, 2)
+        if self.add_333:
+            self.ker.add_aggr(3, 3, 3)
+
 
         self.reset_parameters()
 
@@ -97,49 +118,36 @@ class ZINCModel(nn.Module):
                 m.reset_parameters()
 
     def forward(self, batch) -> torch.Tensor:
-        x, edge_feature, triangle_0_1_1, triangle_1_1_1, triangle_1_1_2, triangle_1_2_2, triangle_2_2_2, triangle_3_2_1, triangle_3_3_1, \
-        inverse_edge_1, inverse_edge_2, inverse_edge_3, edge_index0, edge_index, edge_index2, edge_index3, num_nodes, batch = \
-        batch.x, batch.edge_attr, batch.triangle_0_1_1, \
-        batch.triangle_1_1_1, batch.triangle_1_1_2, batch.triangle_1_2_2, \
-        batch.triangle_2_2_2, batch.triangle_3_2_1, batch.triangle_3_3_1, batch.inverse_edge_1, batch.inverse_edge_2, batch.inverse_edge_3,\
-        batch.edge_index0, batch.edge_index, batch.edge_index2, batch.edge_index3, batch.num_nodes, batch.batch0
-        x = x.squeeze()
-        x = self.initial_proj(x)
-        edge_attr1 = self.distance_encoding(torch.zeros_like(edge_index[0]))
-        edge_attr2 = self.distance_encoding(torch.ones_like(edge_index2[0]))
-        edge_attr3 = self.distance_encoding(torch.ones_like(edge_index3[0]) * 2)
+        edge_indices = [batch.edge_index, batch.edge_index2, batch.edge_index3]
+        x = self.initial_proj(batch.x).squeeze()
+        edge_attrs = [x,
+                      self.distance_encoding(torch.zeros_like(edge_indices[0][0])) + x[edge_indices[0][0]] + x[edge_indices[0][1]],
+                      self.distance_encoding(torch.ones_like(edge_indices[1][0])) + x[edge_indices[1][0]] + x[edge_indices[1][1]],
+                      self.distance_encoding(torch.ones_like(edge_indices[2][0]) * 2) + x[edge_indices[2][0]] + x[edge_indices[2][1]]]
+        triangles = {
+            (1, 1, 1): batch.triangle_1_1_1,
+            (1, 1, 2): batch.triangle_1_1_2,
+            (2, 2, 1): batch.triangle_2_2_1,
+            (2, 2, 2): batch.triangle_2_2_2,
+            (3, 2, 1): batch.triangle_3_2_1,
+            (3, 3, 1): batch.triangle_3_3_1,
+            (3, 3, 2): batch.triangle_3_3_2,
+            (3, 2, 2): batch.triangle_3_2_2,
+            (3, 3, 3): batch.triangle_3_3_3
+        }
+        inverse_edges = [batch.inverse_edge_1, batch.inverse_edge_2, batch.inverse_edge_3]
 
-
-        edge_attr0 = x
-        edge_attr1 = edge_attr1 + x[edge_index[1]] + x[edge_index[0]]
-        edge_attr2 = edge_attr2 + x[edge_index2[1]] + x[edge_index2[0]]
-        edge_attr3 = edge_attr3 + x[edge_index3[1]] + x[edge_index3[0]]
-
-
+        edge_feature = batch.edge_attr
         edge_emb_list = [l(edge_feature) for l in self.edge_lins]
 
-        edge_attr0, edge_attr1, edge_attr2, edge_attr3 = self.ker(edge_attr0,
-                                                                  edge_attr1,
-                                                                  edge_attr2,
-                                                                  edge_attr3,
-                                                                  edge_index0,
-                                                                  edge_index,
-                                                                  edge_index2,
-                                                                  edge_index3,
-                                                                  triangle_0_1_1,
-                                                                  triangle_1_1_1,
-                                                                  triangle_1_1_2,
-                                                                  triangle_1_2_2,
-                                                                  triangle_2_2_2,
-                                                                  triangle_3_2_1,
-                                                                  triangle_3_3_1,
-                                                                  inverse_edge_1,
-                                                                  inverse_edge_2,
-                                                                  inverse_edge_3,
-                                                                  edge_emb_list)
-        x = self.pool([edge_attr0, edge_attr1, edge_attr2, edge_attr3],
-                      [edge_index0, edge_index, edge_index2, edge_index3],
-                      num_nodes, batch)
+        edge_attrs = self.ker(edge_attrs,
+                              edge_indices,
+                              triangles,
+                              inverse_edges,
+                              batch.batch0,
+                              edge_emb_list)
+
+        x = self.pool(edge_attrs, edge_indices, batch.num_nodes, batch.batch0)
         x = self.post_mlp(x).squeeze()
         return x
 
@@ -218,12 +226,15 @@ def main():
                            loader.model.add_112,
                            loader.model.add_212,
                            loader.model.add_222,
-                           loader.model.add_321,
                            loader.model.add_331,
-                           loader.model.add_vv,
+                           loader.model.add_321,
+                           loader.model.add_322,
+                           loader.model.add_332,
+                           loader.model.add_333,
                            loader.model.eps,
                            loader.model.train_eps,
                            loader.model.norm,
+                           loader.model.in_layer_norm,
                            loader.model.residual,
                            loader.model.dropout)
 

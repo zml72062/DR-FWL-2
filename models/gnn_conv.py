@@ -6,474 +6,271 @@ import torch
 import torch.nn as nn
 from torch_scatter import scatter
 import torch.nn.functional as F
-from copy import deepcopy as c
 from .mlp import MLP
-from .norms import Normalization
-from typing import Tuple
+from typing import Tuple, List, Dict
+from torch_geometric.nn import global_mean_pool
 
-class MultisetAggregation(nn.Module):
-    r"""Multiset aggregation module with elements of 2-sets.
-    Args:
-        in_channels (int): Input size.
-        out_channels (int): Output size.
-    """
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int):
-        super().__init__()
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.proj = nn.Linear(self.in_channels * 2, self.out_channels)
-
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        self.proj.reset_parameters()
-
-    def forward(self,
-                num_edges: int,
-                x_ik: torch.Tensor,
-                x_kj: torch.Tensor,
-                edge_index_ij: torch.LongTensor,
-                edge_index_ik: torch.LongTensor,
-                edge_index_kj: torch.LongTensor
-                ) -> torch.Tensor:
-
-        x_edge = F.relu(self.proj(torch.cat([x_ik[edge_index_ik], x_kj[edge_index_kj]], dim=-1)))
-        out = scatter(x_edge, edge_index_ij, dim=0, dim_size=num_edges, reduce="sum")
-        return out
 
 class DR2FWL2Conv(nn.Module):
-    r"""Convolutional layer of distance restricted 2-FWL. The update formula is
-        ..math::
-        W(u, v) = \text{HASH}(W(u, v), ({{(W(w, v), W(u, w))|
-                w \in \mathcal{N}_{i}(u) \cap \mathcal{N}_{j}(v)}})_{0 \leq i, j \leq 2 })
-    Args:
-        in_channels (int): input size.
-        out_channels (int): output size.
-        add_0 (bool): If true, add multiset aggregation involves root nodes.
-        add_112 (bool): If true, add all multiset aggregations for triangle 1-1-2.
-        add_212 (bool): If true, add all multiset aggregations for triangle 2-1-2.
-        add_222 (bool): If true, add all multiset aggregations for triangle 2-2-2.
-        add_3 (bool): If true, add multiset aggregation involves edge of 3-hop pair.
-        add_vv (bool): If true, for each :math::W(u, v), add :math::W(v, v) as additional aggregation.
-                        Only works if add_0 is true.
-        eps (bool): Epsilon for distinguishing W(u, v) in aggregation, default is trainable.
-        norm_type (str): Normalization type after each layer, choose from ("none", "batch_norm", "layer_norm").
-    """
-
-    def __init__(self,
-                 in_channels: int,
+    def __init__(self, in_channels: int,
                  out_channels: int,
-                 add_0: bool = True,
-                 add_112: bool = True,
-                 add_212: bool = True,
-                 add_222: bool = True,
-                 add_vv: bool = False,
-                 eps: float = 0.,
-                 train_eps: bool = False,
-                 norm_type: str = "batch_norm"):
+                 norm_type: str,
+                 eps: float,
+                 train_eps: bool,
+                 relu_last: bool,
+                 add_root: bool = False):
         super().__init__()
+        self.aggr_list: List[Tuple[int, int, int]] = []
         self.in_channels = in_channels
         self.out_channels = out_channels
-        self.add_0 = add_0
-        self.add_112 = add_112
-        self.add_212 = add_212
-        self.add_222 = add_222
-        self.add_vv = add_vv
-        self.initial_eps = eps
-        self.train_eps = train_eps
         self.norm_type = norm_type
+        self.relu_last = relu_last
+        self.add_root = add_root
+        self.inner_lin = nn.Linear(self.in_channels, self.out_channels)
 
-        set_agg = MultisetAggregation(self.in_channels, self.out_channels)
-        mlp = MLP(self.in_channels, self.out_channels, self.norm_type)
-        norm = Normalization(self.out_channels, self.norm_type)
-        if self.train_eps:
-            eps = torch.nn.Parameter(torch.Tensor([self.initial_eps]))
-
-
-        self.agg0 = c(set_agg)
-        self.mlp0 = c(mlp)
-        self.norm0 = c(norm)
-        if self.train_eps:
-            self.eps0 = c(eps)
+        self.mlps = nn.ModuleDict()
+        self.lins = nn.ModuleDict()
+        if train_eps:
+            self.eps = nn.Parameter(torch.tensor([eps], requires_grad=True))
         else:
-            self.register_buffer('eps0', torch.Tensor([self.initial_eps]))
+            self.register_buffer('eps', torch.tensor([eps]))
 
-        self.agg1 = c(set_agg)
-        self.mlp1 = c(mlp)
-        self.norm1 = c(norm)
-        if self.train_eps:
-            self.eps1 = c(eps)
-        else:
-            self.register_buffer('eps1', torch.Tensor([self.initial_eps]))
-
-
-        self.agg2 = c(set_agg)
-        self.mlp2 = c(mlp)
-        self.norm2 = c(norm)
-        if self.train_eps:
-            self.eps2 = c(eps)
-        else:
-            self.register_buffer('eps2', torch.Tensor([self.initial_eps]))
-
-
-        if self.add_vv:
-            self.mlpvv = c(mlp)
-            self.normvv = c(norm)
-            if self.train_eps:
-                self.epsvv = c(eps)
-            else:
-                self.register_buffer('epsvv', torch.Tensor([self.initial_eps]))
-
-        self.reset_parameters()
-
-    def reset_parameters(self):
-        self.agg0.reset_parameters()
-        self.mlp0.reset_parameters()
-        self.norm0.reset_parameters()
-        self.eps0.data.fill_(self.initial_eps)
-
-        self.agg1.reset_parameters()
-        self.mlp1.reset_parameters()
-        self.norm1.reset_parameters()
-        self.eps1.data.fill_(self.initial_eps)
-
-
-        self.agg2.reset_parameters()
-        self.mlp2.reset_parameters()
-        self.norm2.reset_parameters()
-        self.eps2.data.fill_(self.initial_eps)
-
-
-        if self.add_vv:
-            self.mlpvv.reset_parameters()
-            self.normvv.reset_parameters()
-            self.epsvv.data.fill_(self.initial_eps)
-
-
-    def forward(self,
-                edge_attr0: torch.Tensor,
-                edge_attr1: torch.Tensor,
-                edge_attr2: torch.Tensor,
-                edge_index0: torch.LongTensor,
-                edge_index: torch.LongTensor,
-                edge_index2: torch.LongTensor,
-                triangle_0_1_1: torch.LongTensor,
-                triangle_1_1_1: torch.LongTensor,
-                triangle_1_1_2: torch.LongTensor,
-                triangle_1_2_2: torch.LongTensor,
-                triangle_2_2_2: torch.LongTensor,
-                inverse_edge_1: torch.LongTensor,
-                inverse_edge_2: torch.LongTensor,
-                ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
-
-        # For undirected graphs, the direction of edges is unimportant
-        ij011, ik011, kj011 = triangle_0_1_1
-        ij111, ik111, kj111 = triangle_1_1_1
-        ij112, ik112, kj112 = triangle_1_1_2
-        ij122, ik122, kj122 = triangle_1_2_2
-        ij222, ik222, kj222 = triangle_2_2_2
-
-        num_edge0 = edge_attr0.size(0)
-        num_edge1 = edge_attr1.size(0)
-        num_edge2 = edge_attr2.size(0)
-
-        edge_attr0_out = torch.zeros_like(edge_attr0)
-        edge_attr1_out = torch.zeros_like(edge_attr1)
-        edge_attr2_out = torch.zeros_like(edge_attr2)
-
-
-        if self.add_0:
-            #011
-            edge_attr0_out += self.agg0(num_edge0, edge_attr1, edge_attr1, ij011, ik011, kj011)
-            edge_attr0_out = self.norm0(self.mlp0((1 + self.eps0) * edge_attr0 + edge_attr0_out))
-
-            #101
-            edge_attr_101 = self.agg1(num_edge1, edge_attr0, edge_attr1, ik011, ij011, kj011)
-            edge_attr1_out += (edge_attr_101 + edge_attr_101[inverse_edge_1]) / 2
-
-        #111
-        edge_attr_111 = self.agg1(num_edge1, edge_attr1, edge_attr1, ij111, ik111, kj111)
-        edge_attr1_out += (edge_attr_111 + edge_attr_111[inverse_edge_1]) / 2
-
-        if self.add_112:
-            #112
-            edge_attr_112 = self.agg1(num_edge1, edge_attr1, edge_attr2, ij112, ik112, kj112)
-            edge_attr1_out += (edge_attr_112 + edge_attr_112[inverse_edge_1]) / 2
-            #211
-            edge_attr_211 = self.agg2(num_edge2, edge_attr1, edge_attr1, kj112, ij112, ik112)
-            edge_attr2_out += (edge_attr_211 + edge_attr_211[inverse_edge_2]) / 2
-
-        if self.add_212:
-            #122
-            edge_attr_122 = self.agg1(num_edge1, edge_attr2, edge_attr2, ij122, ik122, kj122)
-            edge_attr1_out += (edge_attr_122 + edge_attr_122[inverse_edge_1]) / 2
-            #212
-            edge_attr_212 = self.agg2(num_edge2, edge_attr1, edge_attr2, ik122, ij122, kj122)
-            edge_attr2_out += (edge_attr_212 + edge_attr_212[inverse_edge_2]) / 2
-
-        if self.add_222:
-            #222
-            edge_attr_222 = self.agg2(num_edge2, edge_attr2, edge_attr2, ij222, ik222, kj222)
-            edge_attr2_out += (edge_attr_222 + edge_attr_222[inverse_edge_2]) / 2
-
-
-        edge_attr1_out = self.norm1(self.mlp1((1 + self.eps1) * edge_attr1 + edge_attr1_out))
-        edge_attr2_out = self.norm2(self.mlp2((1 + self.eps2) * edge_attr2 + edge_attr2_out))
-
-        if self.add_vv and self.add_0:
-            vv_out = self.normvv(self.mlpvv((1 + self.epsvv) *
-                                    torch.cat([edge_attr0, edge_attr1, edge_attr2], dim=0)
-                                    + edge_attr0[torch.cat([edge_index0[1], edge_index[1], edge_index2[1]], dim=-1)]))
-
-            edge_attr0_out += vv_out[:num_edge0]
-            edge_attr1_out += vv_out[num_edge0: num_edge1 + num_edge0]
-            edge_attr2_out += vv_out[num_edge1 + num_edge0:]
-
-        return edge_attr0_out, edge_attr1_out, edge_attr2_out
-
-
-
-
-class DR2FWL2ConvZINC(nn.Module):
-    r"""Convolutional layer of distance restricted 2-FWL for ZINC, which additional add triganle of 3-2-1.
-    Args:
-        in_channels (int): input size.
-        out_channels (int): output size.
-        add_0 (bool): If true, add multiset aggregation involves root nodes.
-        add_112 (bool): If true, add all multiset aggregations for triangle 1-1-2.
-        add_212 (bool): If true, add all multiset aggregations for triangle 2-1-2.
-        add_222 (bool): If true, add all multiset aggregations for triangle 2-2-2.
-        add_321 (bool): If true, add all multiset aggregations for triangle 3-2-1.
-        add_331 (bool): If true, add all multiset aggregations for triangle 3-3-1.
-        add_vv (bool): If true, for each :math::W(u, v), add :math::W(v, v) as additional aggregation.
-                        Only works if add_0 is true.
-        eps (bool): Epsilon for distinguishing W(u, v) in aggregation, default is trainable.
-        norm_type (str): Normalization type after each layer, choose from ("none", "batch_norm", "layer_norm").
-    """
-
-    def __init__(self,
-                 in_channels: int,
-                 out_channels: int,
-                 add_0: bool = True,
-                 add_112: bool = True,
-                 add_212: bool = True,
-                 add_222: bool = True,
-                 add_321: bool = True,
-                 add_331: bool = True,
-                 add_vv: bool = False,
-                 eps: float = 0.,
-                 train_eps: bool = False,
-                 norm_type: str = "batch_norm"):
-        super().__init__()
-
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.add_0 = add_0
-        self.add_112 = add_112
-        self.add_212 = add_212
-        self.add_222 = add_222
-        self.add_321 = add_321
-        self.add_331 = add_331
-        self.add_vv = add_vv
-        self.initial_eps = eps
-        self.train_eps = train_eps
-        self.norm_type = norm_type
-
-        set_agg = MultisetAggregation(self.in_channels, self.out_channels)
-        mlp = MLP(self.in_channels, self.out_channels, self.norm_type)
-        norm = Normalization(self.out_channels, self.norm_type)
-        if self.train_eps:
-            eps = torch.nn.Parameter(torch.Tensor([self.initial_eps]))
-
-
-        self.agg0 = c(set_agg)
-        self.mlp0 = c(mlp)
-        self.norm0 = c(norm)
-        if self.train_eps:
-            self.eps0 = c(eps)
-        else:
-            self.register_buffer('eps0', torch.Tensor([self.initial_eps]))
-
-        self.agg1 = c(set_agg)
-        self.mlp1 = c(mlp)
-        self.norm1 = c(norm)
-        if self.train_eps:
-            self.eps1 = c(eps)
-        else:
-            self.register_buffer('eps1', torch.Tensor([self.initial_eps]))
-
-
-        self.agg2 = c(set_agg)
-        self.mlp2 = c(mlp)
-        self.norm2 = c(norm)
-        if self.train_eps:
-            self.eps2 = c(eps)
-        else:
-            self.register_buffer('eps2', torch.Tensor([self.initial_eps]))
-
-        self.agg3 = c(set_agg)
-        self.mlp3 = c(mlp)
-        self.norm3 = c(norm)
-        if self.train_eps:
-            self.eps3 = c(eps)
-        else:
-            self.register_buffer('eps3', torch.Tensor([self.initial_eps]))
-
-
-        if self.add_vv:
-            self.mlpvv = c(mlp)
-            self.normvv = c(norm)
-            if self.train_eps:
-                self.epsvv = c(eps)
-            else:
-                self.register_buffer('epsvv', torch.Tensor([self.initial_eps]))
-
-
-        self.reset_parameters()
+        if self.add_root:
+            self.root_lin = nn.Linear(self.in_channels, self.out_channels)
 
 
     def reset_parameters(self):
-
-        self.agg0.reset_parameters()
-        self.mlp0.reset_parameters()
-        self.norm0.reset_parameters()
-        self.eps0.data.fill_(self.initial_eps)
-
-        self.agg1.reset_parameters()
-        self.mlp1.reset_parameters()
-        self.norm1.reset_parameters()
-        self.eps1.data.fill_(self.initial_eps)
-
-
-        self.agg2.reset_parameters()
-        self.mlp2.reset_parameters()
-        self.norm2.reset_parameters()
-        self.eps2.data.fill_(self.initial_eps)
-
-
-        if self.add_vv:
-            self.mlpvv.reset_parameters()
-            self.normvv.reset_parameters()
-            self.epsvv.data.fill_(self.initial_eps)
-
-        self.agg3.reset_parameters()
-        self.mlp3.reset_parameters()
-        self.norm3.reset_parameters()
-        self.eps3.data.fill_(self.initial_eps)
+        self.inner_lin.reset_parameters()
+        for lin in self.lins.values():
+            lin.reset_parameters()
+        for lin in self.mlps.values():
+            lin.reset_parameters()
+        if self.add_root:
+            self.root_lin.reset_parameters()
 
 
     def forward(self,
-                edge_attr0: torch.Tensor,
-                edge_attr1: torch.Tensor,
-                edge_attr2: torch.Tensor,
-                edge_attr3: torch.Tensor,
-                edge_index0: torch.LongTensor,
-                edge_index: torch.LongTensor,
-                edge_index2: torch.LongTensor,
-                edge_index3: torch.LongTensor,
-                triangle_0_1_1: torch.LongTensor,
-                triangle_1_1_1: torch.LongTensor,
-                triangle_1_1_2: torch.LongTensor,
-                triangle_1_2_2: torch.LongTensor,
-                triangle_2_2_2: torch.LongTensor,
-                triangle_3_2_1: torch.LongTensor,
-                triangle_3_3_1: torch.LongTensor,
-                inverse_edge_1: torch.LongTensor,
-                inverse_edge_2: torch.LongTensor,
-                inverse_edge_3: torch.LongTensor,
-                ) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor, torch.Tensor]:
+                edge_attrs: List[torch.Tensor],
+                edge_indices: List[torch.LongTensor],
+                triangles: Dict[Tuple[int, int, int], torch.LongTensor],
+                inverse_edges: List[torch.LongTensor],
+                batch: torch.LongTensor = None) -> List[torch.Tensor]:
+        nums = [edge_attr.shape[0] for edge_attr in edge_attrs]
+        aggr_out = [torch.tensor([0], device=edge_attrs[0].device) for _ in edge_attrs]
 
-        # For undirected graphs, the direction of edges is unimportant
-        ij011, ik011, kj011 = triangle_0_1_1
-        ij111, ik111, kj111 = triangle_1_1_1
-        ij112, ik112, kj112 = triangle_1_1_2
-        ij122, ik122, kj122 = triangle_1_2_2
-        ij222, ik222, kj222 = triangle_2_2_2
-        ij321, ik321, kj321 = triangle_3_2_1
-        ij331, ik331, kj331 = triangle_3_3_1
+        edge_inner_attrs = [self.inner_lin(edge_attr) for edge_attr in edge_attrs]
 
-        num_edge0 = edge_attr0.size(0)
-        num_edge1 = edge_attr1.size(0)
-        num_edge2 = edge_attr2.size(0)
-        num_edge3 = edge_attr3.size(0)
+        for aggr in self.aggr_list:
+            aggr_c = self.parse_aggr(aggr)
+            if aggr_c == 0:
+                j = aggr[1]
 
-        edge_attr0_out = torch.zeros_like(edge_attr0)
-        edge_attr1_out = torch.zeros_like(edge_attr1)
-        edge_attr2_out = torch.zeros_like(edge_attr2)
-        edge_attr3_out = torch.zeros_like(edge_attr3)
+                # 0j->j and j0->j aggregations
+                s, e = edge_indices[j - 1]
+                aggr_out[j] = aggr_out[j] + self.lins[str((j, j))](
+                    F.relu(edge_inner_attrs[0][s] + edge_inner_attrs[0][e]))
+                # jj->0 aggregation
+                aggr_out[0] = aggr_out[0] + self.lins[str((j, 0))](scatter(F.relu(
+                                    edge_inner_attrs[j]), s, dim=0, dim_size=nums[0]))
+            elif aggr_c == 1:
+                j = aggr[0]
+                # jj->j aggregation
+                tri = triangles[aggr]
+                aggr_out[j] = aggr_out[j] + self.lins[str((j, j))](scatter(F.relu(
+                    edge_inner_attrs[j][tri[1]] + edge_inner_attrs[j][tri[2]]), tri[0], dim=0, dim_size=nums[j]))
+            elif aggr_c == 2:
+                i, j = aggr[0], aggr[2]
+                # ii->j aggregation
+                tri = triangles[aggr]
+                aggr_out[j] = aggr_out[j] + self.lins[str((i, i))](scatter(F.relu(
+                    edge_inner_attrs[i][tri[0]] + edge_inner_attrs[i][tri[1]]), tri[2], dim=0, dim_size=nums[j]))
+                # ij->i and ji->i aggregations
+                out_iji = scatter(F.relu(edge_inner_attrs[i][tri[1]] +
+                                         edge_inner_attrs[j][tri[2]]), tri[0], dim=0, dim_size=nums[i])
+                aggr_out[i] = aggr_out[i] + self.lins[str((j, i))](out_iji + out_iji[inverse_edges[i - 1]])
+            elif aggr_c == 3:
+                i, j, k = aggr
+                tri = triangles[aggr]
+
+                out_jki = scatter(F.relu(edge_inner_attrs[j][tri[1]] +
+                                         edge_inner_attrs[k][tri[2]]), tri[0], dim=0, dim_size=nums[i])
+                aggr_out[i] = aggr_out[i] + self.lins[str((j, k))](out_jki + out_jki[inverse_edges[i - 1]])
+
+                out_ikj = scatter(F.relu(edge_inner_attrs[i][tri[0]] +
+                                         edge_inner_attrs[k][tri[2]]), tri[1], dim=0, dim_size=nums[j])
+
+                aggr_out[j] = aggr_out[j] + self.lins[str((k, i))](out_ikj + out_ikj[inverse_edges[j - 1]])
+
+                out_kij = scatter(F.relu(edge_inner_attrs[i][tri[0]] +
+                                  edge_inner_attrs[j][tri[1]]), tri[2], dim=0, dim_size=nums[k])
+                aggr_out[k] = aggr_out[k] + self.lins[str((i, j))](out_kij + out_kij[inverse_edges[k - 1]])
 
 
-        if self.add_0:
-            #011
-            edge_attr0_out += self.agg0(num_edge0, edge_attr1, edge_attr1, ij011, ik011, kj011)
+        if self.add_root:
+            h_root = global_mean_pool(edge_attrs[0], batch)[batch] +  edge_attrs[0]
+            aggr_out = [aggr_out[j] + F.tanh(self.root_lin(edge_attrs[j] + h_root)) if j == 0 else
+                          aggr_out[j] + F.tanh(self.root_lin(edge_attrs[j] + h_root[edge_indices[j - 1][1]]))
+                          for j in range(len(edge_attrs))]
 
-            #101
-            edge_attr_101 = self.agg1(num_edge1, edge_attr0, edge_attr1, ik011, ij011, kj011)
-            edge_attr1_out += (edge_attr_101 + edge_attr_101[inverse_edge_1]) / 2
+        return [self.mlps[str(i)](edge_attrs[i] * (1 + self.eps) + aggr_out[i]) + edge_attrs[i]
+                if str(i) in self.mlps.keys() else edge_attrs[i]
+                for i in range(len(nums))] if not self.relu_last else [
+            F.relu(self.mlps[str(i)](edge_attrs[i] * (1 + self.eps) + aggr_out[i])) + edge_attrs[i]
+            if str(i) in self.mlps.keys() else edge_attrs[i]
+            for i in range(len(nums))]
 
-        #111
-        edge_attr_111 = self.agg1(num_edge1, edge_attr1, edge_attr1, ij111, ik111, kj111)
-        edge_attr1_out += (edge_attr_111 + edge_attr_111[inverse_edge_1]) / 2
+    def add_aggr(self, aggr_type: Tuple[int, int, int]):
+        aggr_c = self.parse_aggr(aggr_type)
 
-        if self.add_112:
-            #112
-            edge_attr_112 = self.agg1(num_edge1, edge_attr1, edge_attr2, ij112, ik112, kj112)
-            edge_attr1_out += (edge_attr_112 + edge_attr_112[inverse_edge_1]) / 2
-            #211
-            edge_attr_211 = self.agg2(num_edge2, edge_attr1, edge_attr1, kj112, ij112, ik112)
-            edge_attr2_out += (edge_attr_211 + edge_attr_211[inverse_edge_2]) / 2
+        self.aggr_list.append(aggr_type)
+        # root node
+        if aggr_c == 0:
+            j = aggr_type[1]
+            self.lins[str((j, j))] = nn.Linear(self.in_channels, self.in_channels)
+            self.lins[str((j, 0))] = nn.Linear(self.in_channels, self.in_channels)
+        elif aggr_c == 1:
+            j = aggr_type[0]
+            self.lins[str((j, j))] = nn.Linear(self.in_channels, self.in_channels)
 
-        if self.add_212:
-            #122
-            edge_attr_122 = self.agg1(num_edge1, edge_attr2, edge_attr2, ij122, ik122, kj122)
-            edge_attr1_out += (edge_attr_122 + edge_attr_122[inverse_edge_1]) / 2
-            #212
-            edge_attr_212 = self.agg2(num_edge2, edge_attr1, edge_attr2, ik122, ij122, kj122)
-            edge_attr2_out += (edge_attr_212 + edge_attr_212[inverse_edge_2]) / 2
+        elif aggr_c == 2:
+            i, j = aggr_type[0], aggr_type[2]
+            self.lins[str((i, i))] = nn.Linear(self.in_channels, self.in_channels)
+            self.lins[str((j, i))] = nn.Linear(self.in_channels, self.in_channels)
+        elif aggr_c == 3:
+            i, j, k = aggr_type
+            self.lins[str((j, k))] = nn.Linear(self.in_channels, self.in_channels)
+            self.lins[str((k, i))] = nn.Linear(self.in_channels, self.in_channels)
+            self.lins[str((i, j))] = nn.Linear(self.in_channels, self.in_channels)
 
-        if self.add_222:
-            #222
-            edge_attr_222 = self.agg2(num_edge2, edge_attr2, edge_attr2, ij222, ik222, kj222)
-            edge_attr2_out += (edge_attr_222 + edge_attr_222[inverse_edge_2]) / 2
+        for i in aggr_type:
+            self.mlps[str(i)] = MLP(self.in_channels, self.out_channels, self.norm_type)
 
-        if self.add_321:
-            #321
-            edge_attr_321 = self.agg3(num_edge3, edge_attr2, edge_attr1, ij321, ik321, kj321)
-            edge_attr3_out += (edge_attr_321 + edge_attr_321[inverse_edge_3]) / 2
+    def parse_aggr(self, aggr_type: Tuple[int, int, int]):
+        i, j, k = aggr_type
+        if i == 0:
+            return 0
+        elif i == k:
+            return 1
+        elif i == j:
+            return 2
+        elif i < j and j < k:
+            return 3
+        else:
+            raise ValueError("Incorrect tuple order!")
 
-            #231
-            edge_attr_231 = self.agg2(num_edge2, edge_attr3, edge_attr1, ik321, ij321, kj321)
-            edge_attr2_out += (edge_attr_231 + edge_attr_231[inverse_edge_2]) / 2
 
-            #123
-            edge_attr_123 = self.agg1(num_edge1, edge_attr2, edge_attr3, kj321, ik321, ij321)
-            edge_attr1_out += (edge_attr_123 + edge_attr_123[inverse_edge_1]) / 2
 
-        if self.add_331:
-            #331
-            edge_attr_331 = self.agg3(num_edge3, edge_attr3, edge_attr1, ij331, ik331, kj331)
-            edge_attr3_out += (edge_attr_331 + edge_attr_331[inverse_edge_3]) / 2
+"""
+class DR2FWL2ConvNew(nn.Module):
+    def __init__(self, in_channels: int,
+                 out_channels: int,
+                 norm_type: str,
+                 eps: float,
+                 train_eps: bool,
+                 relu_last: bool):
+        super().__init__()
+        self.aggr_list: List[Tuple[int, int, int]] = []
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        self.norm_type = norm_type
+        self.relu_last = relu_last
+        self.inner_lin = nn.Linear(self.in_channels, self.out_channels)
+        self.outer_mlp = MLP(self.in_channels, self.out_channels, "none")
 
-            #133
-            edge_attr_133 = self.agg1(num_edge1, edge_attr3, edge_attr3, kj331, ij331, ik331)
-            edge_attr1_out += (edge_attr_133 + edge_attr_133[inverse_edge_1]) / 2
 
-        edge_attr0_out = self.norm0(self.mlp0((1 + self.eps0) * edge_attr0 + edge_attr0_out))
-        edge_attr1_out = self.norm1(self.mlp1((1 + self.eps1) * edge_attr1 + edge_attr1_out))
-        edge_attr2_out = self.norm2(self.mlp2((1 + self.eps2) * edge_attr2 + edge_attr2_out))
-        edge_attr3_out = self.norm3(self.mlp3((1 + self.eps3) * edge_attr3 + edge_attr3_out))
+        self.mlps = nn.ModuleDict()
+        if train_eps:
+            self.eps = nn.Parameter(torch.tensor([eps], requires_grad=True))
+        else:
+            self.register_buffer('eps', torch.tensor([eps]))
 
-        if self.add_vv and self.add_0:
-            vv_out = self.normvv(self.mlpvv((1 + self.epsvv) *
-                                    torch.cat([edge_attr0, edge_attr1, edge_attr2, edge_attr3], dim=0)
-                                    + edge_attr0[torch.cat([edge_index0[1], edge_index[1], edge_index2[1], edge_index3[1]], dim=-1)]))
+    def reset_parameters(self):
+        self.inner_lin.reset_parameters()
+        self.outer_mlp.reset_parameters()
 
-            edge_attr0_out += vv_out[:num_edge0]
-            edge_attr1_out += vv_out[num_edge0: num_edge1 + num_edge0]
-            edge_attr2_out += vv_out[num_edge1 + num_edge0: num_edge1 + num_edge0 + num_edge2]
-            edge_attr3_out += vv_out[num_edge1 + num_edge0 + num_edge2: ]
+        for lin in self.mlps.values():
+            lin.reset_parameters()
 
-        return edge_attr0_out, edge_attr1_out, edge_attr2_out, edge_attr3_out
 
+    def forward(self,
+                edge_attrs: List[torch.Tensor],
+                edge_indices: List[torch.LongTensor],
+                triangles: Dict[Tuple[int, int, int], torch.LongTensor],
+                inverse_edges: List[torch.LongTensor]) -> List[torch.Tensor]:
+        nums = [edge_attr.shape[0] for edge_attr in edge_attrs]
+        aggr_out = [torch.tensor([0], device=edge_attrs[0].device) for _ in edge_attrs]
+
+        edge_inner_attrs = [self.inner_lin(edge_attr) for edge_attr in edge_attrs]
+
+        for aggr in self.aggr_list:
+            aggr_c = self.parse_aggr(aggr)
+            if aggr_c == 0:
+                j = aggr[1]
+
+                # 0j->j and j0->j aggregations
+                s, e = edge_indices[j - 1]
+                aggr_out[j] = aggr_out[j] + self.outer_mlp(
+                    F.relu(edge_inner_attrs[0][s] + edge_inner_attrs[0][e]))
+                # jj->0 aggregation
+                aggr_out[0] = aggr_out[0] + self.outer_mlp(scatter(F.relu(
+                                    edge_inner_attrs[j]), s, dim=0, dim_size=nums[0]))
+            elif aggr_c == 1:
+                j = aggr[0]
+                # jj->j aggregation
+                tri = triangles[aggr]
+                aggr_out[j] = aggr_out[j] + self.outer_mlp(scatter(F.relu(
+                    edge_inner_attrs[j][tri[1]] + edge_inner_attrs[j][tri[2]]), tri[0], dim=0, dim_size=nums[j]))
+            elif aggr_c == 2:
+                i, j = aggr[0], aggr[2]
+                # ii->j aggregation
+                tri = triangles[aggr]
+                aggr_out[j] = aggr_out[j] + self.outer_mlp(scatter(F.relu(
+                    edge_inner_attrs[i][tri[0]] + edge_inner_attrs[i][tri[1]]), tri[2], dim=0, dim_size=nums[j]))
+                # ij->i and ji->i aggregations
+                out_iji = scatter(F.relu(edge_inner_attrs[i][tri[1]] +
+                                         edge_inner_attrs[j][tri[2]]), tri[0], dim=0, dim_size=nums[i])
+                aggr_out[i] = aggr_out[i] + self.outer_mlp(out_iji + out_iji[inverse_edges[i - 1]])
+            elif aggr_c == 3:
+                i, j, k = aggr
+                tri = triangles[aggr]
+
+                out_jki = scatter(F.relu(edge_inner_attrs[j][tri[1]] +
+                                         edge_inner_attrs[k][tri[2]]), tri[0], dim=0, dim_size=nums[i])
+                aggr_out[i] = aggr_out[i] + self.outer_mlp(out_jki + out_jki[inverse_edges[i - 1]])
+
+                out_ikj = scatter(F.relu(edge_inner_attrs[i][tri[0]] +
+                                         edge_inner_attrs[k][tri[2]]), tri[1], dim=0, dim_size=nums[j])
+
+                aggr_out[j] = aggr_out[j] + self.outer_mlp(out_ikj + out_ikj[inverse_edges[j - 1]])
+
+                out_kij = scatter(F.relu(edge_inner_attrs[i][tri[0]] +
+                                  edge_inner_attrs[j][tri[1]]), tri[2], dim=0, dim_size=nums[k])
+                aggr_out[k] = aggr_out[k] + self.outer_mlp(out_kij + out_kij[inverse_edges[k - 1]])
+
+        return [self.mlps[str(i)](edge_attrs[i] * (1 + self.eps) + aggr_out[i]) + edge_attrs[i]
+                if str(i) in self.mlps.keys() else edge_attrs[i]
+                for i in range(len(nums))] if not self.relu_last else [
+            F.relu(self.mlps[str(i)](edge_attrs[i] * (1 + self.eps) + aggr_out[i])) + edge_attrs[i]
+            if str(i) in self.mlps.keys() else edge_attrs[i]
+            for i in range(len(nums))]
+
+    def add_aggr(self, aggr_type: Tuple[int, int, int]):
+        aggr_c = self.parse_aggr(aggr_type)
+        self.aggr_list.append(aggr_type)
+        for i in aggr_type:
+            self.mlps[str(i)] = MLP(self.in_channels, self.out_channels, self.norm_type)
+
+    def parse_aggr(self, aggr_type: Tuple[int, int, int]):
+        i, j, k = aggr_type
+        if i == 0:
+            return 0
+        elif i == k:
+            return 1
+        elif i == j:
+            return 2
+        elif i < j and j < k:
+            return 3
+        else:
+            raise ValueError("Incorrect tuple order!")
+
+"""

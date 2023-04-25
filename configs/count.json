@@ -8,6 +8,7 @@
         "num_layers": 5,
         "dropout": 0.0,
         "norm": "none",
+        "in_layer_norm": "none",
         "eps": 0.0,
         "train_eps": false,
         "add_0": true,

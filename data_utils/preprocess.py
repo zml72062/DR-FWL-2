@@ -147,7 +147,7 @@ def drfwl2_transform():
          generate_lkm_triangle(0, 1, 1),
          generate_lkm_triangle(1, 1, 1),
          generate_lkm_triangle(1, 1, 2),
-         generate_lkm_triangle(1, 2, 2),
+         generate_lkm_triangle(2, 2, 1),
          generate_lkm_triangle(2, 2, 2),
          generate_inverse_edge(2)]
     )
@@ -162,7 +162,7 @@ def drfwl2_transform_zinc():
          generate_lkm_triangle(0, 1, 1),
          generate_lkm_triangle(1, 1, 1),
          generate_lkm_triangle(1, 1, 2),
-         generate_lkm_triangle(1, 2, 2),
+         generate_lkm_triangle(2, 2, 1),
          generate_lkm_triangle(2, 2, 2),
          generate_lkm_triangle(3, 2, 1),
          generate_lkm_triangle(3, 3, 1),

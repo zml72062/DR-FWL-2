@@ -8,6 +8,7 @@
         "num_layers": 6,
         "dropout": 0.0,
         "norm": "batch_norm",
+        "in_layer_norm": "batch_norm",
         "eps": 0.0,
         "train_eps": true,
         "add_0": true,
@@ -16,7 +17,9 @@
         "add_222": true,
         "add_321": false,
         "add_331": true,
-        "add_vv": true,
+        "add_322": false,
+        "add_332": false,
+        "add_333": false,
         "residual": "last"
     },
     "train": {
