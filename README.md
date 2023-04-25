@@ -1,5 +1,7 @@
 # DR-FWL-2
 
+![DR-FWL-2](https://github.com/zml72062/DR-FWL-2/blob/main/drfwl2.png?raw=true)
+
 ## Dependencies
 
 Code within this repository depends on `pygmmpp` package, which provides simple preprocessing API for graph datasets. Run the following command to install `pygmmpp`:
