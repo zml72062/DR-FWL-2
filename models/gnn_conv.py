@@ -7,6 +7,7 @@ import torch.nn as nn
 from torch_scatter import scatter
 import torch.nn.functional as F
 from .mlp import MLP
+from .norms import Normalization
 from typing import Tuple, List, Dict
 from torch_geometric.nn import global_mean_pool
 
@@ -281,22 +282,37 @@ class DR2FWL2ConvSimple(nn.Module):
                  norm_type: str,
                  eps: float,
                  train_eps: bool,
-                 relu_last: bool):
+                 relu_last: bool,
+                 add_graph: bool = False):
         super().__init__()
         self.aggr_list: List[Tuple[int, int, int]] = []
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.norm_type = norm_type
+        self.initial_eps = eps
         self.relu_last = relu_last
+        self.add_graph = add_graph
 
         # combine inner linear into one
         self.inner_lin = nn.Linear(self.in_channels, self.in_channels)
         self.mlps = nn.ModuleDict()
         self.lins = nn.ModuleDict()
         if train_eps:
-            self.eps = nn.Parameter(torch.tensor([eps], requires_grad=True))
+            self.eps = nn.Parameter(torch.tensor([self.initial_eps], requires_grad=True))
         else:
-            self.register_buffer('eps', torch.tensor([eps]))
+            self.register_buffer('eps', torch.tensor([self.initial_eps]))
+
+        if self.add_graph:
+            self.graph_proj = nn.Linear(self.in_channels, self.out_channels)
+            self.root_proj = nn.Linear(self.out_channels, self.out_channels)
+            if train_eps:
+                self.graph_eps = nn.Parameter(torch.tensor([self.initial_eps], requires_grad=True))
+                self.root_eps = nn.Parameter(torch.tensor([self.initial_eps], requires_grad=True))
+
+            else:
+                self.register_buffer('graph_eps', torch.tensor([self.initial_eps]))
+                self.register_buffer('root_eps', torch.tensor([self.initial_eps]))
+
 
     def reset_parameters(self):
         self.inner_lin.reset_parameters()
@@ -306,12 +322,20 @@ class DR2FWL2ConvSimple(nn.Module):
         for lin in self.mlps.values():
             lin.reset_parameters()
 
+        if self.add_graph:
+            self.graph_proj.reset_parameters()
+            self.root_proj.reset_parameters()
+            self.graph_eps.data.fill_(self.initial_eps)
+            self.root_eps.data.fill_(self.initial_eps)
+
+
 
     def forward(self, 
                 edge_attrs: List[torch.Tensor],
                 edge_indices: List[torch.LongTensor],
                 triangles: Dict[Tuple[int, int, int], torch.LongTensor],
-                inverse_edges: List[torch.LongTensor]) -> List[torch.Tensor]:
+                inverse_edges: List[torch.LongTensor],
+                batch: torch.LongTensor = None) -> List[torch.Tensor]:
         nums = [edge_attr.shape[0] for edge_attr in edge_attrs]
         aggr_out = [torch.tensor([0], device=edge_attrs[0].device) for _ in edge_attrs]
 
@@ -375,6 +399,16 @@ class DR2FWL2ConvSimple(nn.Module):
                     tri[2], dim=0, dim_size=nums[k]
                 )
                 aggr_out[k] = aggr_out[k] + self.lins[str((i, j, k))] (out_kij + out_kij[inverse_edges[k - 1]])
+
+        if self.add_graph:
+            h_graph = global_mean_pool(edge_attrs[0], batch)[batch]
+            h_root = F.elu(self.graph_proj((1 + self.graph_eps) * edge_attrs[0] + h_graph))
+            aggr_root = [F.tanh(self.root_proj((1 + self.root_eps) * edge_attrs[j] + h_root)) if j == 0 else
+                         F.tanh(self.root_proj((1 + self.root_eps) * edge_attrs[j] + h_root[edge_indices[j-1][1]]))
+                          for j in range(len(nums))]
+
+            aggr_out = [aggr_out[j] + aggr_root[j] for j in range(len(nums))]
+
         
         return [self.mlps[str(i)](edge_attrs[i] * (1 + self.eps) + aggr_out[i]) + edge_attrs[i]
                 if str(i) in self.mlps.keys() else edge_attrs[i]

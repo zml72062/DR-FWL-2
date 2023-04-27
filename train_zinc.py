@@ -120,7 +120,7 @@ class ZINCModel(nn.Module):
     def forward(self, batch) -> torch.Tensor:
         edge_indices = [batch.edge_index, batch.edge_index2, batch.edge_index3]
         x = self.initial_proj(batch.x).squeeze()
-        edge_attrs = [x,
+        edge_attrs = [x + x,
                       self.distance_encoding(torch.zeros_like(edge_indices[0][0])) + x[edge_indices[0][0]] + x[edge_indices[0][1]],
                       self.distance_encoding(torch.ones_like(edge_indices[1][0])) + x[edge_indices[1][0]] + x[edge_indices[1][1]],
                       self.distance_encoding(torch.ones_like(edge_indices[2][0]) * 2) + x[edge_indices[2][0]] + x[edge_indices[2][1]]]

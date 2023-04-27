@@ -16,7 +16,7 @@ class DR2FWL2Kernel(torch.nn.Module):
                  norm_between_layers: str = "batch_norm",
                  residual: str = "last",
                  drop_prob: float = 0.0,
-                 add_root: bool = False):
+                 add_graph: bool = False):
 
         super().__init__()
 
@@ -28,15 +28,15 @@ class DR2FWL2Kernel(torch.nn.Module):
         self.norm_type = norm_type
         self.residual = residual
         self.drop_prob = drop_prob
-        self.add_root = add_root
+        self.add_graph = add_graph
 
-        gnn = DR2FWL2Conv(hidden_channels,
-                          hidden_channels,
-                          norm_type,
-                          eps,
-                          train_eps,
-                          False,
-                          self.add_root)
+        gnn = DR2FWL2ConvSimple(hidden_channels,
+                                hidden_channels,
+                                norm_type,
+                                eps,
+                                train_eps,
+                                False,
+                                self.add_graph)
         norm = Normalization(hidden_channels, norm_between_layers)
 
         self.gnns = clones(gnn, num_layers)
@@ -84,7 +84,6 @@ class DR2FWL2Kernel(torch.nn.Module):
                                       triangles,
                                       inverse_edges,
                                       batch)
-
 
             edge_attrs = [F.dropout(e, p=self.drop_prob, training=self.training)
                           for e in edge_attrs]
