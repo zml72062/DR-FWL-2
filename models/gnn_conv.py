@@ -304,7 +304,7 @@ class DR2FWL2ConvSimple(nn.Module):
 
         if self.add_graph:
             self.graph_proj = nn.Linear(self.in_channels, self.out_channels)
-            self.root_proj = MLP(self.out_channels, self.out_channels, "layer_norm")
+            self.root_proj = MLP(self.out_channels, self.out_channels, "none")
             if train_eps:
                 self.graph_eps = nn.Parameter(torch.tensor([self.initial_eps], requires_grad=True))
                 self.root_eps = nn.Parameter(torch.tensor([self.initial_eps], requires_grad=True))
