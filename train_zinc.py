@@ -94,11 +94,11 @@ class ZINCModel(nn.Module):
         if self.add_222:
             self.ker.add_aggr(2, 2, 2)
         if self.add_321:
-            self.ker.add_aggr(3, 2, 1)
+            self.ker.add_aggr(1, 2, 3)
         if self.add_331:
             self.ker.add_aggr(3, 3, 1)
         if self.add_322:
-            self.ker.add_aggr(3, 2, 2)
+            self.ker.add_aggr(2, 2, 3)
         if self.add_332:
             self.ker.add_aggr(3, 3, 2)
         if self.add_333:
@@ -129,10 +129,10 @@ class ZINCModel(nn.Module):
             (1, 1, 2): batch.triangle_1_1_2,
             (2, 2, 1): batch.triangle_2_2_1,
             (2, 2, 2): batch.triangle_2_2_2,
-            (3, 2, 1): batch.triangle_3_2_1,
+            (1, 2, 3): batch.triangle_1_2_3,
             (3, 3, 1): batch.triangle_3_3_1,
+            (2, 2, 3): batch.triangle_2_2_3,
             (3, 3, 2): batch.triangle_3_3_2,
-            (3, 2, 2): batch.triangle_3_2_2,
             (3, 3, 3): batch.triangle_3_3_3
         }
         inverse_edges = [batch.inverse_edge_1, batch.inverse_edge_2, batch.inverse_edge_3]
@@ -263,7 +263,7 @@ def main():
 
         trainer.fit(modelmodule, datamodule)
         modelmodule.set_test_eval_still()
-        val_result, test_result = trainer.validate(modelmodule, datamodule)
+        val_result, test_result = trainer.validate(modelmodule, datamodule, ckpt_path="best")
         results = {"final/best_val_metric": val_result["val/metric"],
                    "final/best_test_metric": test_result["test/metric"],
                    "final/avg_train_time_epoch": timer.time_elapsed("train") / loader.train.epochs,

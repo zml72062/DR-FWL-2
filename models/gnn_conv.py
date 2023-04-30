@@ -304,7 +304,7 @@ class DR2FWL2ConvSimple(nn.Module):
 
         if self.add_graph:
             self.graph_proj = nn.Linear(self.in_channels, self.out_channels)
-            self.root_proj = nn.Linear(self.out_channels, self.out_channels)
+            self.root_proj = MLP(self.out_channels, self.out_channels, "layer_norm")
             if train_eps:
                 self.graph_eps = nn.Parameter(torch.tensor([self.initial_eps], requires_grad=True))
                 self.root_eps = nn.Parameter(torch.tensor([self.initial_eps], requires_grad=True))
@@ -401,10 +401,13 @@ class DR2FWL2ConvSimple(nn.Module):
                 aggr_out[k] = aggr_out[k] + self.lins[str((i, j, k))] (out_kij + out_kij[inverse_edges[k - 1]])
 
         if self.add_graph:
+            h_root = edge_attrs[0]
+            aggr_root = [self.root_proj((1 + self.root_eps) * edge_attrs[j] + h_root) if j == 0 else
+                         self.root_proj((1 + self.root_eps) * edge_attrs[j] + h_root[edge_indices[j-1][1]])
+                          for j in range(len(nums))]
             h_graph = global_mean_pool(edge_attrs[0], batch)[batch]
-            h_root = F.elu(self.graph_proj((1 + self.graph_eps) * edge_attrs[0] + h_graph))
-            aggr_root = [F.tanh(self.root_proj((1 + self.root_eps) * edge_attrs[j] + h_root)) if j == 0 else
-                         F.tanh(self.root_proj((1 + self.root_eps) * edge_attrs[j] + h_root[edge_indices[j-1][1]]))
+            aggr_root = [ F.tanh(self.graph_proj((1 + self.root_eps) * aggr_root[j] + h_graph)) if j == 0 else
+                          F.tanh(self.graph_proj((1 + self.root_eps) * aggr_root[j] + h_graph[edge_indices[j-1][1]]))
                           for j in range(len(nums))]
 
             aggr_out = [aggr_out[j] + aggr_root[j] for j in range(len(nums))]
