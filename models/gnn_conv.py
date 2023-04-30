@@ -405,6 +405,7 @@ class DR2FWL2ConvSimple(nn.Module):
             aggr_root = [self.root_proj((1 + self.root_eps) * edge_attrs[j] + h_root) if j == 0 else
                          self.root_proj((1 + self.root_eps) * edge_attrs[j] + h_root[edge_indices[j-1][1]])
                           for j in range(len(nums))]
+
             h_graph = global_mean_pool(edge_attrs[0], batch)[batch]
             aggr_root = [ F.tanh(self.graph_proj((1 + self.root_eps) * aggr_root[j] + h_graph)) if j == 0 else
                           F.tanh(self.graph_proj((1 + self.root_eps) * aggr_root[j] + h_graph[edge_indices[j-1][1]]))
