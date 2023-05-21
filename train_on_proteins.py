@@ -25,7 +25,6 @@ from pygmmpp.data import DataLoader as myDataLoader
 from dataloader import DataLoader as pyDataLoader
 import sys
 import time
-import setproctitle
 # os.environ["CUDA_LAUNCH_BLOCKING"]="1"
 
 target_map = {
@@ -168,7 +167,6 @@ parser.add_argument('--use_rd', action='store_true', default=False,
 parser.add_argument('--test_split', type=int, default=0, help='0-9')
 
 args = parser.parse_args()
-setproctitle.setproctitle(f"zjr@{args.model}_on_{args.dataset}")
 
 def get_transform():
     if args.model == 'DRFWL2':
