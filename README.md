@@ -60,3 +60,36 @@ To run 2-DRFWL(2) GNN on ogbg-molhiv dataset, execute
 ```
 python ogbg_molhiv_models.py --config-path configs/ogbmol.json
 ```
+
+## Cycle counting on protein datasets
+
+We collect three protein datasets from https://github.com/phermosilla/IEConv_proteins, two of which (`ProteinsDBDataset` and `HomologyTAPEDataset`) are used for cycle counting. See https://anonymous.4open.science/r/ProteinsDataset-F0C2 for our original code that processes the three datasets.
+
+Download the two datasets from the following URLs:
+
+* `ProteinsDBDataset`
+
+https://drive.google.com/uc?export=download&id=1KTs5cUYhG60C6WagFp4Pg8xeMgvbLfhB
+
+Extract in `protdb/raw/ProteinsDB/`
+
+* `HomologyTAPEDataset`
+
+https://drive.google.com/uc?export=download&id=1chZAkaZlEBaOcjHQ3OUOdiKZqIn36qar
+
+Extract in `homology/raw/HomologyTAPE/`
+
+We copied the `IEProtLib` directory from https://github.com/phermosilla/IEConv_proteins since our processing code makes use of this submodule. We also copied code from https://github.com/GraphPKU/I2GNN (the official code for [Boosting the Cycle Counting Power of Graph Neural Networks with I $^2$-GNNs.](https://arxiv.org/abs/2210.13978)) to run baseline methods (MPNN, NGNN, I2GNN and PPGN) on the two proteins datasets.
+
+**Experiments on the two protein datasets depend on the `h5py` package.**
+
+To run 2-DRFWL(2) GNN/MPNN/NGNN/I2GNN/PPGN on `ProteinsDBDataset`, execute
+```
+python train_on_proteins.py --dataset ProteinsDB --model <model> --root protdb --target <target> --batch_size 32 --h 3 --cuda 0 --epochs 1500 --test_split <test-split>
+```
+where `<model>` takes `DRFWL2`/`MPNN`/`NGNN`/`I2GNN`/`PPGN`, `<target>` takes `3-cycle`/`4-cycle`/`5-cycle`/`6-cycle`, `<test-split>` takes 0-9 for 10-fold cross validation.
+
+To run 2-DRFWL(2) GNN/MPNN/NGNN/I2GNN/PPGN on `HomologyTAPEDataset`, execute
+```
+python train_on_proteins.py --dataset HomologyTAPE --model <model> --root homology --target <target> --batch_size 32 --h 3 --cuda 0 --epochs 2000
+```
