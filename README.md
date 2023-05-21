@@ -6,6 +6,25 @@ Code within this repository depends on `pygmmpp` package (https://anonymous.4ope
 
 After downloading `pygmmpp` from the above URL, run `make` under the root directory to install the `pygmmpp` package.
 
+Other requirements include:
+
+* python 3.9.12
+* numpy 1.21.5
+* pytorch 1.11.0
+* pytorch-scatter 2.0.9
+* pytorch-sparse 0.6.14
+* pytorch-geometric (pyg) 2.1.0
+* pytorch-lightning 2.0.1
+* wandb 0.14.0
+* torchmetrics 0.11.4
+* rdkit 2022.3.5
+* ogb 1.3.3
+* scikit-learn 1.1.1
+* scipy 1.7.3
+* h5py 3.7.0
+* tqdm 4.64.0
+
+
 ## Counting dataset
 
 To run the code on Substructure Counting dataset, one must first run `make` under directory `./software/cycle_count` to compile the C code into `.so` binary and install the python module that generates the ground-truth for substructure counting. After that one can directly import `counting_dataset.py` to get the dataset. Notice that *there may be issues associated with ABI compatibility*, and we only tested our program on x86-64 Linux and MacOS platforms. Alternatively, one can also download from https://anonymous.4open.science/r/cycle_count-E817 and run `make` under the root directory of that repository.
