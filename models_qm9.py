@@ -12,8 +12,7 @@ from models.pool import GraphLevelPooling
 from data_utils.batch import collate
 from data_utils.preprocess import drfwl2_transform
 import train_utils
-import setproctitle
-setproctitle.setproctitle("zjr@drfwl2_on_qm9_tuning")
+import time
 
 class QM9Model(nn.Module):
     def __init__(self,
@@ -195,8 +194,6 @@ parser.add_argument('--config-path', type=str, default='configs/qm9.json',
                     help='Path of the configure file.')
 parser.add_argument('--save-dir', type=str, default='results/qm9',
                     help='Directory to save the result.')
-parser.add_argument('--log-file', type=str, default='qm9.txt',
-                    help='Log file name.')
 parser.add_argument('--copy-data', action='store_true',
                     help='Whether to copy raw data to result directory.')
 
@@ -228,6 +225,7 @@ def train_on_qm9(seed):
     """
     Get and process the dataset.
     """
+    before_preprocessing = time.time()
     dataset = qm9.QM9(
         root, 
         transform=compose(
@@ -240,6 +238,8 @@ def train_on_qm9(seed):
         ), 
         pre_transform=drfwl2_transform()
     )
+    after_preprocessing = time.time()
+    print("Pre-processing time, ", after_preprocessing - before_preprocessing)
     ### Must shuffle first, and normalize next, otherwise leads to
     ### data leaking.
     dataset = dataset.shuffle()
@@ -250,6 +250,8 @@ def train_on_qm9(seed):
     ### Select validation and training split
     mean = dataset.data_batch.y[dataset.indices[tenpercent:]].mean(dim=0)
     std = dataset.data_batch.y[dataset.indices[tenpercent:]].std(dim=0)
+
+    print(f"Mean: {mean[loader.dataset.target]}, Std: {std[loader.dataset.target]}")
 
     dataset.data_batch.y = (dataset.data_batch.y - mean) / std
 
@@ -288,6 +290,8 @@ def train_on_qm9(seed):
                         loader.model.in_layer_norm,
                         loader.model.residual,
                         loader.model.dropout)
+
+    print("# of params: ", sum([f.numel() for f in model.parameters()]))
 
     """
     Get the optimizer.
@@ -331,10 +335,8 @@ def train_on_qm9(seed):
               device,
               optimizer,
               scheduler,
-              'min',
-              open(args.log_file, 'w')
-              )
+              'min')
 
 if __name__ == '__main__':
     print(f"Use file {args.config_path}")
-    print(train_on_qm9(42))
+    print(train_on_qm9(args.seed))

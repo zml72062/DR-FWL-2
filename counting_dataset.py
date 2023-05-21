@@ -1,7 +1,7 @@
 from pygmmpp.datasets import CountDataset
 ## Must run `make` under directory "./software/cycle_count" first
 ## otherwise can't import
-from software import cycle_count
+import cycle_count
 
 target_dict = {
     '3-cycle': lambda i, n, e: cycle_count.count_cycles(i, n, e, 3),

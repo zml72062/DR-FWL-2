@@ -1,4 +1,3 @@
-
 {
     "dataset": {
         "root": "datasets/qm9",
@@ -25,11 +24,10 @@
         "residual": "last"
     },
     "train": {
-        "seed": 42,
-        "batch_size": 512,
+        "batch_size": 64,
         "cuda": 0,
         "epochs": 400,
-        "lr": 0.001000,
+        "lr": 0.001,
         "adam_beta1": 0.9,
         "adam_beta2": 0.999,
         "adam_eps": 1e-8,
@@ -39,4 +37,3 @@
         "lr_reduce_min": 1e-5
     }
 }
-        
