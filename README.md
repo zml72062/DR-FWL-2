@@ -37,6 +37,13 @@ python train_on_count.py --seed <random seed> --config-path configs/count.json
 
 Training settings are saved in `configs/count.json` by default. **NOTICE** that every time you modify `dataset.target` setting in the configure file, you should delete the `processed` directory under `datasets/count` to preprocess the dataset again for another target. 
 
+
+To run 3-DRFWL(2) GNN on Substructure Counting dataset, run
+
+```
+python train_on_count.py --use_3 --seed <random seed> --config-path configs/count.json
+```
+
 ## ZINC
 
 /05/2023: 
@@ -109,13 +116,13 @@ We copied the `IEProtLib` directory from https://github.com/phermosilla/IEConv_p
 
 **Experiments on the two protein datasets depend on the `h5py` package.**
 
-To run 2-DRFWL(2) GNN/MPNN/NGNN/I2GNN/PPGN on `ProteinsDBDataset`, execute
+To run 2-DRFWL(2) GNN/MPNN/NGNN/I2GNN/PPGN/SSWL/SSWL+/LFWL(2)/SLFWL(2) on `ProteinsDBDataset`, execute
 ```
 python train_on_proteins.py --dataset ProteinsDB --model <model> --root protdb --target <target> --batch_size 32 --h 3 --cuda 0 --epochs 1500 --test_split <test-split>
 ```
-where `<model>` takes `DRFWL2`/`MPNN`/`NGNN`/`I2GNN`/`PPGN`, `<target>` takes `3-cycle`/`4-cycle`/`5-cycle`/`6-cycle`, `<test-split>` takes 0-9 for 10-fold cross validation.
+where `<model>` takes `DRFWL2`/`MPNN`/`NGNN`/`I2GNN`/`PPGN`/`SSWL`/`SSWLPlus`/`LFWL`/`SLFWL`, `<target>` takes `3-cycle`/`4-cycle`/`5-cycle`/`6-cycle`, `<test-split>` takes 0-9 for 10-fold cross validation.
 
-To run 2-DRFWL(2) GNN/MPNN/NGNN/I2GNN/PPGN on `HomologyTAPEDataset`, execute
+To run 2-DRFWL(2) GNN/MPNN/NGNN/I2GNN/PPGN/SSWL/SSWL+/LFWL(2)/SLFWL(2) on `HomologyTAPEDataset`, execute
 ```
 python train_on_proteins.py --dataset HomologyTAPE --model <model> --root homology --target <target> --batch_size 32 --h 3 --cuda 0 --epochs 2000
 ```

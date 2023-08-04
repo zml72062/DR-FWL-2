@@ -6,7 +6,7 @@ import torch
 import torch.nn as nn
 from counting_dataset import get_count_dataset
 import train_utils
-from data_utils.preprocess import drfwl2_transform
+from data_utils.preprocess import drfwl2_transform, drfwl3_transform
 from torch_geometric.seed import seed_everything
 import argparse
 from data_utils.batch import collate
@@ -16,6 +16,113 @@ from torch.optim.lr_scheduler import ReduceLROnPlateau
 from models.pool import NodeLevelPooling
 from models.gnn_count import DR2FWL2Kernel
 from pygmmpp.data import DataLoader
+
+class CountModel3(nn.Module):
+    """
+    3-DRFWL(2) GNN
+    """
+    def __init__(self,
+                 hidden_channels: int,
+                 num_layers: int,
+                 add_0: bool = True,
+                 add_112: bool = True,
+                 add_212: bool = True,
+                 add_222: bool = True,
+                 eps: float = 0.,
+                 train_eps: bool = False,
+                 norm_type: str = "batch_norm",
+                 norm_between_layers: str = "batch_norm",
+                 residual: str = "none",
+                 drop_prob: float = 0.0):
+
+        super().__init__()
+
+        self.hidden_channels = hidden_channels
+        self.num_layers = num_layers
+        self.add_0 = add_0
+        self.add_112 = add_112
+        self.add_212 = add_212
+        self.add_222 = add_222
+        self.initial_eps = eps
+        self.train_eps = train_eps
+        self.norm_type = norm_type
+        self.residual = residual
+        self.drop_prob = drop_prob
+
+        self.initial_proj = nn.Linear(1, hidden_channels)
+        self.distance_encoding = nn.Embedding(3, hidden_channels)
+
+        self.ker = DR2FWL2Kernel(self.hidden_channels,
+                                 self.num_layers,
+                                 self.initial_eps,
+                                 self.train_eps,
+                                 self.norm_type,
+                                 norm_between_layers,
+                                 self.residual,
+                                 self.drop_prob)
+
+        self.pool = NodeLevelPooling()
+
+        self.post_mlp = nn.Sequential(nn.Linear(hidden_channels, hidden_channels // 2),
+                                       nn.ELU(),
+                                       nn.Linear(hidden_channels // 2, 1))
+        
+        self.ker.add_aggr(1, 1, 1)
+        if self.add_0:
+            self.ker.add_aggr(0, 1, 1)
+            self.ker.add_aggr(0, 2, 2)
+        if self.add_112:
+            self.ker.add_aggr(1, 1, 2)
+        if self.add_212:
+            self.ker.add_aggr(2, 2, 1)
+        if self.add_222:
+            self.ker.add_aggr(2, 2, 2)
+        self.ker.add_aggr(1, 2, 3)
+        self.ker.add_aggr(3, 3, 1)
+        self.ker.add_aggr(2, 2, 3)
+        self.ker.add_aggr(3, 3, 2)
+        self.ker.add_aggr(3, 3, 3)
+        self.ker.add_aggr(0, 3, 3)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        self.initial_proj.reset_parameters()
+        self.distance_encoding.reset_parameters()
+
+        self.ker.reset_parameters()
+        for m in self.post_mlp:
+            if hasattr(m, 'reset_parameters'):
+                m.reset_parameters()
+
+    def forward(self, batch) -> torch.Tensor:
+        edge_indices = [batch.edge_index, batch.edge_index2, batch.edge_index3]
+        edge_attrs = [self.initial_proj(batch.x),
+                      self.distance_encoding(torch.zeros_like(edge_indices[0][0])),
+                      self.distance_encoding(torch.ones_like(edge_indices[1][0])),
+                      self.distance_encoding(torch.full_like(edge_indices[2][0], 2))]
+        triangles = {
+            (1, 1, 1): batch.triangle_1_1_1,
+            (1, 1, 2): batch.triangle_1_1_2,
+            (2, 2, 1): batch.triangle_2_2_1,
+            (2, 2, 2): batch.triangle_2_2_2,
+            (1, 2, 3): batch.triangle_1_2_3,
+            (3, 3, 1): batch.triangle_3_3_1,
+            (2, 2, 3): batch.triangle_2_2_3,
+            (3, 3, 2): batch.triangle_3_3_2,
+            (3, 3, 3): batch.triangle_3_3_3,
+        }
+        inverse_edges = [batch.inverse_edge_1, batch.inverse_edge_2, batch.inverse_edge_3]
+
+        edge_attrs = self.ker(edge_attrs,
+                              edge_indices,
+                              triangles,
+                              inverse_edges)
+
+
+        x = self.pool(edge_attrs, edge_indices, batch.num_nodes)
+        x = self.post_mlp(x).squeeze()
+        return x
 
 
 class CountModel(nn.Module):
@@ -121,6 +228,8 @@ parser.add_argument('--save-dir', type=str, default='results/count',
 parser.add_argument('--copy-data', action='store_true',
                     help='Whether to copy raw data to result directory.')
 parser.add_argument('--seed', type=int, default=42, help='random seed.')
+parser.add_argument('--use_3', action='store_true', help='Whether to use '
+                    '3-DRFWL(2).')
 
 args = parser.parse_args()
 
@@ -136,18 +245,19 @@ def train_on_count(seed):
     else:
         dir = train_utils.copy(args.config_path, args.save_dir)
         root = loader.dataset.root
-    
+    print(f'Target: {loader.dataset.target}')
+    print(f'Model: {3 if args.use_3 else 2}-DRFWL(2)')
     seed_everything(seed)
 
     train_dataset = get_count_dataset(root, loader.dataset.target,
                                       split='train',
-                                      pre_transform=drfwl2_transform())
+                                      pre_transform=drfwl2_transform() if not args.use_3 else drfwl3_transform())
     val_dataset = get_count_dataset(root, loader.dataset.target,
                                     split='val',
-                                    pre_transform=drfwl2_transform())
+                                    pre_transform=drfwl2_transform() if not args.use_3 else drfwl3_transform())
     test_dataset = get_count_dataset(root, loader.dataset.target,
                                      split='test',
-                                     pre_transform=drfwl2_transform())
+                                     pre_transform=drfwl2_transform() if not args.use_3 else drfwl3_transform())
 
     train_val = torch.cat([train_dataset.data_batch.__dict__[loader.dataset.target],
                            val_dataset.data_batch.__dict__[loader.dataset.target]]).to(torch.float)
@@ -186,7 +296,7 @@ def train_on_count(seed):
     """
     Get the model.
     """
-    model = CountModel(
+    model = (CountModel if not args.use_3 else CountModel3)(
                         loader.model.hidden_channels,
                         loader.model.num_layers,
                         loader.model.add_0,

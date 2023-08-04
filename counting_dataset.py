@@ -8,6 +8,7 @@ target_dict = {
     '4-cycle': lambda i, n, e: cycle_count.count_cycles(i, n, e, 4),
     '5-cycle': lambda i, n, e: cycle_count.count_cycles(i, n, e, 5),
     '6-cycle': lambda i, n, e: cycle_count.count_cycles(i, n, e, 6),
+    '7-cycle': lambda i, n, e: cycle_count.count_cycles(i, n, e, 7),
     '4-clique': cycle_count.count_4_cliques,
     'tailed-triangle': cycle_count.count_tailed_triangles,
     'chordal-cycle': cycle_count.count_chordal_cycles,

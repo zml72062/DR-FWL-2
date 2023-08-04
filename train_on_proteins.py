@@ -26,6 +26,31 @@ from software.i2gnn.dataloader import DataLoader as pyDataLoader
 import sys
 import time
 # os.environ["CUDA_LAUNCH_BLOCKING"]="1"
+import local_fwl2 as lfwl
+from local_fwl2 import LFWLLayer, SLFWLLayer, SSWLPlusLayer, SSWLLayer
+from torch_geometric.utils import to_dense_batch
+
+class NodePooling(nn.Module):
+    def __init__(self, in_channels: int, out_channels: int):
+        super().__init__()
+        self.lin = nn.Conv2d(in_channels, out_channels, (1, 1))
+    
+    def forward(self, X):
+        return self.lin(X).sum(-1)
+
+class LFWLWrapper(nn.Module):
+    def __init__(self, hidden_channels: int,
+                 num_layers: int, model):
+        super().__init__()
+        self.localfwl2 = lfwl.LocalFWL2(hidden_channels, num_layers, model,
+                                        1, None, 'instance')
+        self.pooling = NodePooling(hidden_channels, 1)
+    
+    def forward(self, batch) -> torch.Tensor:
+        _, mask = to_dense_batch(batch.x, batch.batch0)
+        return self.pooling(self.localfwl2(
+            *lfwl.to_dense(batch.x, batch.edge_index, None, batch.batch0))).squeeze().flatten()[mask.flatten()]
+
 
 target_map = {
     '3-cycle': 1,
@@ -133,7 +158,7 @@ parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default='HomologyTAPE',
                     help='ProteinsDB/HomologyTAPE/ProtFunct')
 parser.add_argument('--model', type=str, default='DRFWL2',
-                    help='MPNN/NGNN/I2GNN/DRFWL2/PPGN')
+                    help='MPNN/NGNN/I2GNN/DRFWL2/PPGN/SSWL/SSWLPlus/LFWL/SLFWL')
 parser.add_argument('--seed', type=int, default=42, help='random seed.')
 parser.add_argument('--root', type=str, default='homology')
 parser.add_argument('--target', type=str, default='6-cycle',
@@ -331,7 +356,8 @@ def train_on_count():
     Get the model.
     """
     model = eval(f"{args.model}Counting")(hidden_channels=args.hidden_channels,
-                                          num_layers=args.num_layers)
+                                          num_layers=args.num_layers) if args.model not in {'SSWL', 'SSWLPlus', 'LFWL', 'SLFWL'} else\
+                                            LFWLWrapper(args.hidden_channels, args.num_layers, eval(f"{args.model}Layer"))
     
     print("# of Parameters:", sum([p.numel() for p in model.parameters()]))
 
