@@ -1,7 +1,6 @@
-from typing import Callable, Optional
-from IEProtLib.py_utils.py_mol.PyProtein import PyProtein
-from IEProtLib.py_utils.py_mol.PyPeriodicTable import PyPeriodicTable
-import utils
+from .IEProtLib.py_utils.py_mol.PyProtein import PyProtein
+from .IEProtLib.py_utils.py_mol.PyPeriodicTable import PyPeriodicTable
+from . import utils
 from pygmmpp.data import Dataset, Data, Batch
 import os.path as osp
 import sys
@@ -10,12 +9,12 @@ import torch
 from typing import Optional, Callable, List
 
 def get_split(split: str, root: str):
-    assert split in ['training', 'validation', 'testing'], \
+    assert split in ['training', 'validation', 'test_family', 'test_fold', 'test_superfamily'], \
     "Invalid split name!"
-    with open(osp.join(root, 'raw', 'ProtFunct', f'{split}.txt')) as f:
-        return [l.rstrip() for l in f.readlines()]
+    with open(osp.join(root, 'raw', 'HomologyTAPE', f'{split}.txt')) as f:
+        return [l.rstrip().split('\t')[0] for l in f.readlines()]
 
-class ProtFunctDataset(Dataset):
+class HomologyTAPEDataset(Dataset):
     def __init__(self, root: str, split: str, includeHB: bool = False,
                  to_undirected: bool = True,
                  use_amino_type: bool = False,
@@ -27,7 +26,7 @@ class ProtFunctDataset(Dataset):
         Args:
 
         root (str): Root directory of the dataset \\
-        split (str): Dataset split (training/validation/testing) \\
+        split (str): Dataset split (training/validation/test_family/test_fold/test_superfamily) \\
         includeHB (bool): Whether to include hydrogen bond in adjacency matrix,
         default to False \\ 
         to_undirected (bool): Whether to convert graph into undirected by adding
@@ -48,8 +47,8 @@ class ProtFunctDataset(Dataset):
     
     @property
     def raw_file_names(self):
-        return [osp.join('ProtFunct', 'data', f"{file}.hdf5") for file in get_split(self.split, self.root)
-                ] + [osp.join('ProtFunct', f"{self.split}.txt")]
+        return [osp.join('HomologyTAPE', self.split, f"{file}.hdf5") for file in get_split(self.split, self.root)
+                ] + [osp.join('HomologyTAPE', f"{self.split}.txt")]
     
     @property
     def processed_file_names(self):
@@ -66,7 +65,7 @@ class ProtFunctDataset(Dataset):
         print("Converting hdf5 files to PyG objects...", file=sys.stderr)
         data_list: List[Data] = []
         for file in tqdm(split):
-            file_dict = utils.read_file(protein, osp.join(self.root, 'raw', 'ProtFunct', 'data', f'{file}.hdf5'))
+            file_dict = utils.read_file(protein, osp.join(self.root, 'raw', 'HomologyTAPE', self.split, f'{file}.hdf5'))
             num_nodes = utils.get_num_nodes(file_dict)
             edge_index = torch.from_numpy(utils.get_edge_index(file_dict, self.includeHB)).t().to(torch.long)
             if self.to_undirected:

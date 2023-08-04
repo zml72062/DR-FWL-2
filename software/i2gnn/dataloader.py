@@ -2,7 +2,7 @@ import torch.utils.data
 from torch.utils.data.dataloader import default_collate
 
 from torch_geometric.data import Data
-from batch import Batch  # replace with custom Batch to handle subgraphs
+from .batch import Batch  # replace with custom Batch to handle subgraphs
 import collections.abc as container_abcs
 int_classes = int
 string_classes = (str, bytes)

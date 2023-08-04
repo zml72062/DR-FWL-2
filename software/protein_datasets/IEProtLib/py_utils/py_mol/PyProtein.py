@@ -17,8 +17,8 @@ import h5py
 
 from sklearn.cluster import SpectralClustering
 
-from IEProtLib.py_utils.py_mol import PyMolecule
-from IEProtLib.py_utils.py_mol import load_protein_pdb, load_protein_mol2
+from . import PyMolecule
+from . import load_protein_pdb, load_protein_mol2
 
 class PyProtein(PyMolecule):
     """Class to store a protein.

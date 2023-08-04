@@ -1,20 +1,20 @@
-from typing import Callable, Optional
-from IEProtLib.py_utils.py_mol.PyProtein import PyProtein
-from IEProtLib.py_utils.py_mol.PyPeriodicTable import PyPeriodicTable
-import utils
+from .IEProtLib.py_utils.py_mol.PyProtein import PyProtein
+from .IEProtLib.py_utils.py_mol.PyPeriodicTable import PyPeriodicTable
+from . import utils
 from pygmmpp.data import Dataset, Data, Batch
 import os.path as osp
 import sys
 from tqdm import tqdm
 import torch
 from typing import Optional, Callable, List
+from .count import *
 
 def get_split(split: int, root: str):
     assert split >= 0 and split <= 9, "Invalid split number!"
     with open(osp.join(root, 'raw', 'ProteinsDB', f'amino_fold_{split}.txt')) as f:
         return [l.rstrip() for l in f.readlines()]
 
-class ProteinsDBDataset(Dataset):
+class ProteinsDBDatasetWithCount(Dataset):
     def __init__(self, root: str, split: int, includeHB: bool = False,
                  to_undirected: bool = True,
                  use_amino_type: bool = False,
@@ -81,6 +81,10 @@ class ProteinsDBDataset(Dataset):
             if self.use_amino_type:
                 amino_type = utils.get_amino_type(file_dict)
                 data.__set_tensor_attr__('AminoType', torch.from_numpy(amino_type),
+                                         'node_feature')
+                
+            for target, target_func in target_dict.items():
+                data.__set_tensor_attr__(target, torch.from_numpy(target_func(edge_index.to(torch.long), num_nodes, edge_index.shape[1])),
                                          'node_feature')
             
             if self.pre_filter is not None and not self.pre_filter(data):

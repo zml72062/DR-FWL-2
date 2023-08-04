@@ -1,23 +1,21 @@
-from typing import Callable, Optional
-from IEProtLib.py_utils.py_mol.PyProtein import PyProtein
-from IEProtLib.py_utils.py_mol.PyPeriodicTable import PyPeriodicTable
-import utils
-from torch_geometric.data import InMemoryDataset, Data
+from .IEProtLib.py_utils.py_mol.PyProtein import PyProtein
+from .IEProtLib.py_utils.py_mol.PyPeriodicTable import PyPeriodicTable
+from . import utils
+from torch_geometric.data import Data, InMemoryDataset
 import os.path as osp
 import sys
 from tqdm import tqdm
 import torch
 from typing import Optional, Callable, List
-from count import *
+from .count import *
 
-def get_split(split: str, root: str):
-    assert split in ['training', 'validation', 'testing'], \
-    "Invalid split name!"
-    with open(osp.join(root, 'raw', 'ProtFunct', f'{split}.txt')) as f:
+def get_split(split: int, root: str):
+    assert split >= 0 and split <= 9, "Invalid split number!"
+    with open(osp.join(root, 'raw', 'ProteinsDB', f'amino_fold_{split}.txt')) as f:
         return [l.rstrip() for l in f.readlines()]
 
-class PygProtFunctDatasetWithCount(InMemoryDataset):
-    def __init__(self, root: str, split: str, includeHB: bool = False,
+class PygProteinsDBDatasetWithCount(InMemoryDataset):
+    def __init__(self, root: str, split: int, includeHB: bool = False,
                  to_undirected: bool = True,
                  use_amino_type: bool = False,
                  use_amino_pos: bool = False,
@@ -28,7 +26,7 @@ class PygProtFunctDatasetWithCount(InMemoryDataset):
         Args:
 
         root (str): Root directory of the dataset \\
-        split (str): Dataset split (training/validation/testing) \\
+        split (str): Dataset split (0~9) \\
         includeHB (bool): Whether to include hydrogen bond in adjacency matrix,
         default to False \\ 
         to_undirected (bool): Whether to convert graph into undirected by adding
@@ -48,12 +46,12 @@ class PygProtFunctDatasetWithCount(InMemoryDataset):
     
     @property
     def raw_file_names(self):
-        return [osp.join('ProtFunct', 'data', f"{file}.hdf5") for file in get_split(self.split, self.root)
-                ] + [osp.join('ProtFunct', f"{self.split}.txt")]
+        return [osp.join('ProteinsDB', 'data', f"{file}.hdf5") for file in get_split(self.split, self.root)
+                ] + [osp.join('ProteinsDB', f"amino_fold_{self.split}.txt")]
     
     @property
     def processed_file_names(self):
-        return f'{self.split}.pt'
+        return f'amino_fold_{self.split}.pt'
 
     def download(self):
         pass
@@ -66,7 +64,7 @@ class PygProtFunctDatasetWithCount(InMemoryDataset):
         print("Converting hdf5 files to PyG objects...", file=sys.stderr)
         data_list: List[Data] = []
         for file in tqdm(split):
-            file_dict = utils.read_file(protein, osp.join(self.root, 'raw', 'ProtFunct', 'data', f'{file}.hdf5'))
+            file_dict = utils.read_file(protein, osp.join(self.root, 'raw', 'ProteinsDB', 'data', f'{file}.hdf5'))
             num_nodes = utils.get_num_nodes(file_dict)
             edge_index = torch.from_numpy(utils.get_edge_index(file_dict, self.includeHB)).t().to(torch.long)
             if self.to_undirected:

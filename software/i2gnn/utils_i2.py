@@ -11,7 +11,7 @@ import numpy as np
 from torch_geometric.data import Data
 from torch_geometric.utils import to_scipy_sparse_matrix
 from torch_scatter import scatter_min
-from batch import Batch
+from .batch import Batch
 from collections import defaultdict
 from copy import deepcopy
 

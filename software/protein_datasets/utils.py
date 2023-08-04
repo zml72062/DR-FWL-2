@@ -1,7 +1,7 @@
 import numpy as np
 from torch import LongTensor, cat, stack
 from typing import Dict
-from IEProtLib.py_utils.py_mol.PyProtein import PyProtein
+from .IEProtLib.py_utils.py_mol.PyProtein import PyProtein
 
 def read_file(protein: PyProtein, filename: str) -> Dict:
     protein.load_hdf5(filename)

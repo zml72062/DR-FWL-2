@@ -100,7 +100,7 @@ class SRModel(nn.Module):
                                  self.residual,
                                  self.drop_prob)
 
-        self.pool = GraphLevelPooling()
+        self.pool = GraphLevelPooling(hidden_channels)
 
         self.post_mlp = nn.Sequential(nn.Linear(hidden_channels, hidden_channels // 2),
                                        nn.ELU(),
@@ -148,7 +148,7 @@ class SRModel(nn.Module):
                               inverse_edges)
 
 
-        x = self.pool(*edge_attrs, *edge_indices, batch.num_nodes, batch.batch0)
+        x = self.pool(edge_attrs, edge_indices, batch.num_nodes, batch.batch0)
         x = self.post_mlp(x)
         x = F.log_softmax(x, dim=1)
         return x
@@ -160,7 +160,7 @@ def main():
     parser.add_argument('--root', type=str, default='datasets/sr25')
     parser.add_argument('--hidden', type=int, default=64)
     parser.add_argument('--layer', type=int, default=5)
-    parser.add_argument('--cuda', type=int, default=3)
+    parser.add_argument('--cuda', type=int, default=0)
     parser.add_argument('--batch-size', type=int, default=64)
     parser.add_argument('--lr', type=float, default=0.001)
     parser.add_argument('--l2-wd', type=float, default=0.0)

@@ -109,7 +109,7 @@ class EXPModel(nn.Module):
                                  self.residual,
                                  self.drop_prob)
 
-        self.pool = GraphLevelPooling()
+        self.pool = GraphLevelPooling(hidden_channels)
 
         self.post_mlp = nn.Sequential(nn.Linear(hidden_channels, hidden_channels // 2),
                                        nn.ELU(),
@@ -157,7 +157,7 @@ class EXPModel(nn.Module):
                               inverse_edges)
 
 
-        x = self.pool(*edge_attrs, *edge_indices, batch.num_nodes, batch.batch0)
+        x = self.pool(edge_attrs, edge_indices, batch.num_nodes, batch.batch0)
         x = self.post_mlp(x)
         x = F.log_softmax(x, dim=1)
         return x
@@ -209,7 +209,7 @@ path = 'datasets/' + DATASET
 dataset = EXP(root=path, pre_transform=compose([MyPreTransform(), drfwl2_transform()]))
 
 
-device = torch.device('cuda:3' if torch.cuda.is_available() else 'cpu')
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 model = EXPModel(WIDTH,
                  LAYERS,

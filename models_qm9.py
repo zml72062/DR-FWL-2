@@ -13,6 +13,21 @@ from data_utils.batch import collate
 from data_utils.preprocess import drfwl2_transform
 import train_utils
 import time
+import local_fwl2 as lfwl
+from local_fwl2 import LFWLLayer, SLFWLLayer, SSWLPlusLayer, SSWLLayer
+
+class LFWLWrapper(nn.Module):
+    def __init__(self, hidden_channels: int,
+                 num_layers: int, model):
+        super().__init__()
+        self.localfwl2 = lfwl.LocalFWL2(hidden_channels, num_layers, model,
+                                        11, 5, 'instance')
+        self.pooling = lfwl.Pooling(hidden_channels, 1)
+    
+    def forward(self, batch) -> torch.Tensor:
+        return self.pooling(self.localfwl2(
+            *lfwl.to_dense(batch.x, batch.edge_index, batch.edge_attr, batch.batch0))).squeeze()
+    
 
 class QM9Model(nn.Module):
     def __init__(self,
@@ -56,7 +71,7 @@ class QM9Model(nn.Module):
                                  self.residual,
                                  self.drop_prob)
 
-        self.pool = GraphLevelPooling()
+        self.pool = GraphLevelPooling(self.hidden_channels)
 
         self.post_mlp = nn.Sequential(nn.Linear(hidden_channels, hidden_channels // 2),
                                        nn.ELU(),
@@ -112,7 +127,7 @@ class QM9Model(nn.Module):
                               inverse_edges)
 
 
-        x = self.pool(*edge_attrs, *edge_indices, batch.num_nodes, batch.batch0)
+        x = self.pool(edge_attrs, edge_indices, batch.num_nodes, batch.batch0)
         x = self.post_mlp(x).squeeze()
         return x
 
@@ -196,6 +211,11 @@ parser.add_argument('--save-dir', type=str, default='results/qm9',
                     help='Directory to save the result.')
 parser.add_argument('--copy-data', action='store_true',
                     help='Whether to copy raw data to result directory.')
+parser.add_argument('--lfwl', type=str, default='none',
+                    help='Which local FWL(2) variant to use, can be '
+                    'SSWL/SSWLPlus/LFWL/SLFWL/none')
+parser.add_argument('--target', type=int, default=0)
+parser.add_argument('--cuda', type=int, default=0)
 
 args = parser.parse_args()
 
@@ -230,13 +250,13 @@ def train_on_qm9(seed):
         root, 
         transform=compose(
             [
-                QM9Transform(loader.dataset.target, loader.preprocess.convert=='pre'), 
+                QM9Transform(args.target, loader.preprocess.convert=='pre'), 
                 Distance(norm=loader.preprocess.not_normalize_dist==False, 
                         relative_pos=loader.preprocess.use_relative_pos, 
                         squared=loader.preprocess.squared_dist)
             ]
         ), 
-        pre_transform=drfwl2_transform()
+        pre_transform=drfwl2_transform() if args.lfwl == "none" else None
     )
     after_preprocessing = time.time()
     print("Pre-processing time, ", after_preprocessing - before_preprocessing)
@@ -263,16 +283,22 @@ def train_on_qm9(seed):
     Load the dataset.
     """
     train_loader = DataLoader(train_dataset, batch_size=loader.train.batch_size,
-                              shuffle=True, collator=collate)
+                              shuffle=True, collator=collate) if args.lfwl == 'none'\
+                else DataLoader(train_dataset, batch_size=loader.train.batch_size,
+                              shuffle=True) 
     val_loader = DataLoader(val_dataset, batch_size=loader.train.batch_size,
-                            shuffle=False, collator=collate)
+                            shuffle=False, collator=collate) if args.lfwl == 'none'\
+                else DataLoader(val_dataset, batch_size=loader.train.batch_size,
+                            shuffle=False)
     test_loader = DataLoader(test_dataset, batch_size=loader.train.batch_size,
-                             shuffle=False, collator=collate)
+                             shuffle=False, collator=collate) if args.lfwl == 'none'\
+                else DataLoader(test_dataset, batch_size=loader.train.batch_size,
+                             shuffle=False)
 
     """
     Set the device.
     """
-    device = f"cuda:{loader.train.cuda}" if loader.train.cuda != -1 else "cpu"
+    device = f"cuda:{args.cuda}" if args.cuda != -1 else "cpu"
 
     """
     Get the model.
@@ -289,7 +315,11 @@ def train_on_qm9(seed):
                         loader.model.norm,
                         loader.model.in_layer_norm,
                         loader.model.residual,
-                        loader.model.dropout)
+                        loader.model.dropout) if args.lfwl == 'none' else \
+       LFWLWrapper(loader.model.hidden_channels, 
+                            loader.model.num_layers,
+                            eval(f"{args.lfwl}Layer"))
+
 
     print("# of params: ", sum([f.numel() for f in model.parameters()]))
 

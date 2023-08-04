@@ -1,28 +1,28 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional
-from HomologyTAPEDatasetWithCount import HomologyTAPEDatasetWithCount
-from ProteinsDBDatasetWithCount import ProteinsDBDatasetWithCount
-from ProtFunctDatasetWithCount import ProtFunctDatasetWithCount
-from PygHomologyTAPEDatasetWithCount import PygHomologyTAPEDatasetWithCount
-from PygProteinsDBDatasetWithCount import PygProteinsDBDatasetWithCount
-from PygProtFunctDatasetWithCount import PygProtFunctDatasetWithCount
+from software.protein_datasets.HomologyTAPEDatasetWithCount import HomologyTAPEDatasetWithCount
+from software.protein_datasets.ProteinsDBDatasetWithCount import ProteinsDBDatasetWithCount
+from software.protein_datasets.ProtFunctDatasetWithCount import ProtFunctDatasetWithCount
+from software.protein_datasets.PygHomologyTAPEDatasetWithCount import PygHomologyTAPEDatasetWithCount
+from software.protein_datasets.PygProteinsDBDatasetWithCount import PygProteinsDBDatasetWithCount
+from software.protein_datasets.PygProtFunctDatasetWithCount import PygProtFunctDatasetWithCount
 from data_utils.preprocess import drfwl2_transform
 from torch_geometric.seed import seed_everything
 import argparse
 from tqdm import tqdm
-from count_I2GNN import (GNN as MPNNCounting, 
-                         I2GNN as I2GNNCounting, 
-                         NGNN as NGNNCounting, 
-                         PPGN as PPGNCounting)
+from software.i2gnn.count_I2GNN import (GNN as MPNNCounting, 
+                                        I2GNN as I2GNNCounting, 
+                                        NGNN as NGNNCounting, 
+                                        PPGN as PPGNCounting)
 from data_utils.batch import collate
 from torch.optim import Adam
 from torch.optim.lr_scheduler import ReduceLROnPlateau
 from models.pool import NodeLevelPooling
 from models.gnn_count import DR2FWL2Kernel
-from utils_i2 import create_subgraphs, create_subgraphs2
+from software.i2gnn.utils_i2 import create_subgraphs, create_subgraphs2
 from pygmmpp.data import DataLoader as myDataLoader
-from dataloader import DataLoader as pyDataLoader
+from software.i2gnn.dataloader import DataLoader as pyDataLoader
 import sys
 import time
 # os.environ["CUDA_LAUNCH_BLOCKING"]="1"
@@ -122,7 +122,7 @@ class DRFWL2Counting(nn.Module):
                               triangles,
                               inverse_edges)
 
-        x = self.pool(*edge_attrs, *edge_indices, batch.num_nodes)
+        x = self.pool(edge_attrs, edge_indices, batch.num_nodes)
         x = self.post_mlp(x).squeeze()
         return x
 

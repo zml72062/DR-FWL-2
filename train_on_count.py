@@ -106,7 +106,7 @@ class CountModel(nn.Module):
                               inverse_edges)
 
 
-        x = self.pool(*edge_attrs, *edge_indices, batch.num_nodes)
+        x = self.pool(edge_attrs, edge_indices, batch.num_nodes)
         x = self.post_mlp(x).squeeze()
         return x
 

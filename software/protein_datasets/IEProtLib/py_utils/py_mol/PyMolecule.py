@@ -14,7 +14,7 @@ import os
 import numpy as np
 import h5py
 
-from IEProtLib.py_utils.py_mol import load_protein_pdb, load_protein_mol2
+from . import load_protein_pdb, load_protein_mol2
 
 class PyMolecule:
     """Class to store a molecule.

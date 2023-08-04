@@ -37,9 +37,9 @@ def get_lkm_triangles(edge_index_l: torch.LongTensor,
     # m_edge"
     edge_index_m_1d = edge_index_m[1] * num_nodes + edge_index_m[0]
     # version 1: faster for smaller graphs but can't scale to larger graphs
-    mask_m_edge = (node_mat.unsqueeze(-1) == edge_index_m_1d).any(-1)
+    # mask_m_edge = (node_mat.unsqueeze(-1) == edge_index_m_1d).any(-1)
     # version 2: scale to larger graphs
-    # mask_m_edge = torch.isin(node_mat, edge_index_m_1d)
+    mask_m_edge = torch.isin(node_mat, edge_index_m_1d)
 
     # Final mask which selects the triangles needed
     mask = mask_share_start * mask_m_edge

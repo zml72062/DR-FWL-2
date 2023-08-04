@@ -10,8 +10,8 @@ from torch_geometric.nn import (
 )
 from torch_geometric.utils import dropout_adj, to_dense_adj, to_dense_batch, degree
 # from utils import *
-from modules.ppgn_modules import *
-from modules.ppgn_layers import *
+from .modules.ppgn_modules import *
+from .modules.ppgn_layers import *
 import numpy as np
 
 class GNN(torch.nn.Module):

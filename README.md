@@ -56,6 +56,13 @@ python models_qm9.py --seed <random seed> --config-path configs/qm9.json
 
 Training settings are saved in `configs/qm9.json` by default.
 
+To run SSWL/SSWL+/LFWL/SLFWL GNN on QM9, execute
+
+```
+python models_qm9.py --seed <random seed> --config-path configs/qm9.json --lfwl <name>
+```
+where `<name>` is `SSWL`/`SSWLPlus`/`LFWL`/`SLFWL`.
+
 ## EXP
 
 To run 2-DRFWL(2) GNN on EXP dataset, execute

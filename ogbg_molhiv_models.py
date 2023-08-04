@@ -104,7 +104,7 @@ class OGBMOLModel(nn.Module):
                                  self.residual,
                                  self.drop_prob)
 
-        self.pool = GraphLevelPooling()
+        self.pool = GraphLevelPooling(hidden_channels)
 
         self.post_mlp = nn.Sequential(nn.Linear(hidden_channels, hidden_channels // 2),
                                        nn.ELU(),
@@ -150,7 +150,7 @@ class OGBMOLModel(nn.Module):
                               inverse_edges)
 
 
-        x = self.pool(*edge_attrs, *edge_indices, batch.num_nodes, batch.batch0)
+        x = self.pool(edge_attrs, edge_indices, batch.num_nodes, batch.batch0)
         x = self.post_mlp(x).reshape(-1, self.num_tasks)
         return x
 
