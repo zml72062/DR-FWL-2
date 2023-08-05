@@ -14,7 +14,7 @@ import train
 from models.gnn_count import DR2FWL2Kernel
 from models.pool import GraphLevelPooling
 from data_utils.batch import collate
-from data_utils.preprocess import drfwl2_transform
+from data_utils.preprocess import drfwl2_transform, drfwl3_transform
 import train_utils
 from pygmmpp.nn.gin_conv import GINEConv
 from pygmmpp.nn.pool import GlobalPool
@@ -60,6 +60,132 @@ class GINEModel(nn.Module):
         x = self.pool(x, batchv)
         return self.post_mlp(x).reshape((-1, self.num_tasks))
 
+import local_fwl2 as lfwl
+from local_fwl2 import LFWLLayer, SLFWLLayer, SSWLPlusLayer, SSWLLayer
+
+class LFWLWrapper(nn.Module):
+    def __init__(self, hidden_channels: int,
+                 num_layers: int,
+                 num_tasks: int, model):
+        super().__init__()
+        self.atom_encoder = AtomEncoder(hidden_channels)
+        self.bond_encoder = BondEncoder(hidden_channels)
+        self.localfwl2 = lfwl.LocalFWL2(hidden_channels, num_layers, model,
+                                        hidden_channels, hidden_channels, 'instance')
+        self.pooling = lfwl.Pooling(hidden_channels, num_tasks)
+    
+    def forward(self, batch) -> torch.Tensor:
+        return self.pooling(self.localfwl2(
+            *lfwl.to_dense(F.relu(self.atom_encoder(batch.x)), 
+                           batch.edge_index, 
+                           F.relu(self.bond_encoder(batch.edge_attr)), 
+                           batch.batch0)))
+
+class OGBMOLModel3(nn.Module):
+    def __init__(self,
+                 hidden_channels: int,
+                 num_layers: int,
+                 num_tasks: int,
+                 add_0: bool = True,
+                 add_112: bool = True,
+                 add_212: bool = True,
+                 add_222: bool = True,
+                 eps: float = 0.,
+                 train_eps: bool = False,
+                 norm_type: str = "batch_norm",
+                 norm_between_layers: str = "batch_norm",
+                 residual: str = "none",
+                 drop_prob: float = 0.0):
+
+        super().__init__()
+
+        self.hidden_channels = hidden_channels
+        self.num_layers = num_layers
+        self.num_tasks = num_tasks
+        self.add_0 = add_0
+        self.add_112 = add_112
+        self.add_212 = add_212
+        self.add_222 = add_222
+        self.initial_eps = eps
+        self.train_eps = train_eps
+        self.norm_type = norm_type
+        self.residual = residual
+        self.drop_prob = drop_prob
+
+        self.atom_encoder = AtomEncoder(hidden_channels)
+        self.bond_encoder = BondEncoder(hidden_channels)
+
+        self.ker = DR2FWL2Kernel(self.hidden_channels,
+                                 self.num_layers,
+                                 self.initial_eps,
+                                 self.train_eps,
+                                 self.norm_type,
+                                 norm_between_layers,
+                                 self.residual,
+                                 self.drop_prob)
+
+        self.pool = GraphLevelPooling(hidden_channels)
+
+        self.post_mlp = nn.Sequential(nn.Linear(hidden_channels, hidden_channels // 2),
+                                       nn.ELU(),
+                                       nn.Linear(hidden_channels // 2, num_tasks))
+        
+        self.ker.add_aggr(1, 1, 1)
+        if self.add_0:
+            self.ker.add_aggr(0, 1, 1)
+            self.ker.add_aggr(0, 2, 2)
+        if self.add_112:
+            self.ker.add_aggr(1, 1, 2)
+        if self.add_212:
+            self.ker.add_aggr(2, 2, 1)
+        if self.add_222:
+            self.ker.add_aggr(2, 2, 2)
+        self.ker.add_aggr(1, 2, 3)
+        self.ker.add_aggr(3, 3, 1)
+        self.ker.add_aggr(2, 2, 3)
+        self.ker.add_aggr(3, 3, 2)
+        self.ker.add_aggr(3, 3, 3)
+        self.ker.add_aggr(0, 3, 3)
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        self.ker.reset_parameters()
+        for m in self.post_mlp:
+            if hasattr(m, 'reset_parameters'):
+                m.reset_parameters()
+
+    def forward(self, batch) -> torch.Tensor:
+        edge_indices = [batch.edge_index, batch.edge_index2, batch.edge_index3]
+        edge_attrs = [self.atom_encoder(batch.x),
+                      self.bond_encoder(batch.edge_attr),
+                      self.atom_encoder(batch.x[batch.edge_index2[0]]) +
+                      self.atom_encoder(batch.x[batch.edge_index2[1]]),
+                      self.atom_encoder(batch.x[batch.edge_index3[0]]) +
+                      self.atom_encoder(batch.x[batch.edge_index3[1]])
+                      ]
+        triangles = {
+            (1, 1, 1): batch.triangle_1_1_1,
+            (1, 1, 2): batch.triangle_1_1_2,
+            (2, 2, 1): batch.triangle_2_2_1,
+            (2, 2, 2): batch.triangle_2_2_2,
+            (1, 2, 3): batch.triangle_1_2_3,
+            (3, 3, 1): batch.triangle_3_3_1,
+            (2, 2, 3): batch.triangle_2_2_3,
+            (3, 3, 2): batch.triangle_3_3_2,
+            (3, 3, 3): batch.triangle_3_3_3,
+        }
+        inverse_edges = [batch.inverse_edge_1, batch.inverse_edge_2, batch.inverse_edge_3]
+
+        edge_attrs = self.ker(edge_attrs,
+                              edge_indices,
+                              triangles,
+                              inverse_edges)
+
+
+        x = self.pool(edge_attrs, edge_indices, batch.num_nodes, batch.batch0)
+        x = self.post_mlp(x).reshape(-1, self.num_tasks)
+        return x
 
 class OGBMOLModel(nn.Module):
     def __init__(self,
@@ -186,6 +312,7 @@ def epoch(model,
             optimizer.step()
         with torch.no_grad():
             loss += batch_loss.item() * y.shape[0]
+        torch.cuda.empty_cache()
     return loss/dataset_len, evaluator.eval({"y_true": torch.cat(y_true, dim=0),
                               "y_pred": torch.cat(y_pred, dim=0)})[metric_name]
 
@@ -254,6 +381,9 @@ parser.add_argument('--save-dir', type=str, default='results/ogbmol',
                     help='Directory to save the result.')
 parser.add_argument('--copy-data', action='store_true',
                     help='Whether to copy raw data to result directory.')
+parser.add_argument('--use_3', action='store_true', help='Whether to use 3-DRFWL(2)')
+parser.add_argument('--lfwl', type=str, default='none', help='Whether to use LFWL variant, '
+                    'default to none, can be LFWL/SLFWL/SSWL/SSWLPlus')
 
 args = parser.parse_args()
 
@@ -288,7 +418,7 @@ def train_on_ogb(seed):
         'ogbg-molpcba': 'ap'
     }
     dataset = OGBG(name=loader.dataset.name, root=loader.dataset.root,
-                   pre_transform=drfwl2_transform())
+                   pre_transform=drfwl2_transform() if not args.use_3 else drfwl3_transform())
     split = dataset.get_idx_split()
 
     train_dataset = dataset[split['train']]
@@ -313,7 +443,28 @@ def train_on_ogb(seed):
     """
     Get the model.
     """
-    model = OGBMOLModel(
+    if args.use_3:
+        model = OGBMOLModel3(
+                        loader.model.hidden_channels,
+                        loader.model.num_layers,
+                        dataset.num_tasks,
+                        loader.model.add_0,
+                        loader.model.add_112,
+                        loader.model.add_212,
+                        loader.model.add_222,
+                        loader.model.eps,
+                        loader.model.train_eps,
+                        loader.model.norm,
+                        loader.model.in_layer_norm,
+                        loader.model.residual,
+                        loader.model.dropout)
+    elif args.lfwl != 'none':
+        model = LFWLWrapper(loader.model.hidden_channels,
+                            loader.model.num_layers,
+                            dataset.num_tasks,
+                            eval(f"{args.lfwl}Layer"))
+    else:
+        model = OGBMOLModel(
                         loader.model.hidden_channels,
                         loader.model.num_layers,
                         dataset.num_tasks,

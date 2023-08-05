@@ -1,0 +1,33 @@
+{
+    "dataset": {
+        "name": "ogbg-molhiv",
+        "root": "datasets"
+    },
+    "model": {
+        "hidden_channels": 64,
+        "num_layers": 2,
+        "dropout": 0.2,
+        "norm": "none",
+        "in_layer_norm": "none",
+        "eps": 0.0,
+        "train_eps": false,
+        "add_0": true,
+        "add_112": true,
+        "add_212": true,
+        "add_222": false,
+        "residual": "last"
+    },
+    "train": {
+        "seed": 42,
+        "batch_size": 64,
+        "cuda": 0,
+        "epochs": 100,
+        "lr": 0.0005,
+        "adam_beta1": 0.9,
+        "adam_beta2": 0.999,
+        "adam_eps": 1e-8,
+        "l2_penalty": 0.0,
+        "lr_reduce_factor": 0.5,
+        "lr_step_size": 20
+    }
+}

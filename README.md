@@ -78,6 +78,12 @@ To run 2-DRFWL(2) GNN on EXP dataset, execute
 python run_exp.py --epochs <num of epochs>
 ```
 
+To run 3-DRFWL(2) GNN on EXP dataset, execute
+
+```
+python run_exp.py --epochs <num of epochs> --use_3
+```
+
 ## SR25
 
 To run 2-DRFWL(2) GNN on SR25 dataset, execute
@@ -86,13 +92,28 @@ To run 2-DRFWL(2) GNN on SR25 dataset, execute
 python run_sr.py --num-epochs <num of epochs>
 ```
 
-## ogbg-molhiv
-
-To run 2-DRFWL(2) GNN on ogbg-molhiv dataset, execute
+To run 3-DRFWL(2) GNN on SR25 dataset, execute
 
 ```
-python ogbg_molhiv_models.py --config-path configs/ogbmol.json
+python run_sr.py --num_epochs <num of epochs> --use_3
 ```
+
+## ogbg-molhiv and ogbg-molpcba
+
+To run 2-DRFWL(2) GNN on ogbg-molhiv/ogbg-molpcba dataset, execute
+
+```
+python ogbmol_models.py --config-path configs/ogbmolhiv.json
+python ogbmol_models.py --config-path configs/ogbmolpcba.json
+```
+
+To run 3-DRFWL(2) GNN on ogbg-molhiv/ogbg-molpcba dataset, execute
+
+```
+python ogbmol_models.py --config-path configs/ogbmolhiv.json --use_3
+python ogbmol_models.py --config-path configs/ogbmolpcba.json --use_3
+```
+
 
 ## Cycle counting on protein datasets
 
