@@ -147,3 +147,11 @@ To run 2-DRFWL(2) GNN/MPNN/NGNN/I2GNN/PPGN/SSWL/SSWL+/LFWL(2)/SLFWL(2) on `Homol
 ```
 python train_on_proteins.py --dataset HomologyTAPE --model <model> --root homology --target <target> --batch_size 32 --h 3 --cuda 0 --epochs 2000
 ```
+
+## Long range graph benchmark
+
+To evaluate the ability of 2-DRFWL(2) GNN to capture long-range interactions, we conduct experiments on two datasets from [Long Range Graph Benchmark](https://github.com/vijaydwivedi75/lrgb) (https://arxiv.org/abs/2206.08164): `peptides-functional` and `peptides-structural`. To run 2-DRFWL(2) GNN on the two datasets, execute
+```
+python train_on_lrgb.py --name Functional --seed <random seed>
+python train_on_lrgb.py --name Structural --seed <random seed>
+```
