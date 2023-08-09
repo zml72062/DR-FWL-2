@@ -214,7 +214,6 @@ parser.add_argument('--copy-data', action='store_true',
 parser.add_argument('--lfwl', type=str, default='none',
                     help='Which local FWL(2) variant to use, can be '
                     'SSWL/SSWLPlus/LFWL/SLFWL/none')
-parser.add_argument('--target', type=int, default=0)
 parser.add_argument('--cuda', type=int, default=0)
 
 args = parser.parse_args()
@@ -250,7 +249,7 @@ def train_on_qm9(seed):
         root, 
         transform=compose(
             [
-                QM9Transform(args.target, loader.preprocess.convert=='pre'), 
+                QM9Transform(loader.dataset.target, loader.preprocess.convert=='pre'), 
                 Distance(norm=loader.preprocess.not_normalize_dist==False, 
                         relative_pos=loader.preprocess.use_relative_pos, 
                         squared=loader.preprocess.squared_dist)
