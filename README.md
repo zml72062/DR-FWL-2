@@ -27,7 +27,7 @@ Other requirements include:
 
 ## Counting dataset
 
-To run the code on Substructure Counting dataset, one must first run `make` under directory `./software/cycle_count` to compile the C code into `.so` binary and install the python module that generates the ground-truth for substructure counting. After that one can directly import `counting_dataset.py` to get the dataset. Notice that *there may be issues associated with ABI compatibility*, and we only tested our program on x86-64 Linux and MacOS platforms. Alternatively, one can also download from https://anonymous.4open.science/r/cycle_count-E817 and run `make` under the root directory of that repository.
+To run the code on Substructure Counting dataset, one must first run `make` under directory `./software/cycle_count` to compile the C code into `.so` binary and install the python module that generates the ground-truth for substructure counting. After that one can directly import `counting_dataset.py` to get the dataset. Notice that *there may be issues associated with ABI compatibility*, and we only tested our program on x86-64 Linux and MacOS platforms. Alternatively, one can also download from https://github.com/zml72062/cycle_count and run `make` under the root directory of that repository.
 
 To run 2-DRFWL(2) GNN on Substructure Counting dataset, one can run
 
@@ -117,7 +117,7 @@ python ogbmol_models.py --config-path configs/ogbmolpcba.json --use_3
 
 ## Cycle counting on protein datasets
 
-We collect three protein datasets from https://github.com/phermosilla/IEConv_proteins, two of which (`ProteinsDBDataset` and `HomologyTAPEDataset`) are used for cycle counting. See https://anonymous.4open.science/r/ProteinsDataset-F0C2 for our original code that processes the three datasets.
+We collect three protein datasets from https://github.com/phermosilla/IEConv_proteins, two of which (`ProteinsDBDataset` and `HomologyTAPEDataset`) are used for cycle counting. See https://github.com/zml72062/ProteinsDataset for our original code that processes the three datasets.
 
 Download the two datasets from the following URLs:
 
