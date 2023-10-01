@@ -2,7 +2,7 @@
 
 ## Dependencies
 
-Code within this repository depends on `pygmmpp` package (https://anonymous.4open.science/r/pygmmpp-4AF6), which provides simple preprocessing API for graph datasets. 
+Code within this repository depends on `pygmmpp` package (https://github.com/zml72062/pygmmpp), which provides simple preprocessing API for graph datasets. 
 
 After downloading `pygmmpp` from the above URL, run `make` under the root directory to install the `pygmmpp` package.
 
