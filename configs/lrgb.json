@@ -21,7 +21,7 @@
         "seed": 42,
         "batch_size": 64,
         "cuda": 0,
-        "epochs": 500,
+        "epochs": 200,
         "lr": 0.001,
         "adam_beta1": 0.9,
         "adam_beta2": 0.999,

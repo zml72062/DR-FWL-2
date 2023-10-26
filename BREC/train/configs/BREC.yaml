@@ -1,0 +1,5 @@
+dataset: BREC
+model:
+  num_layers: 5
+  hidden_size: 32
+device: 1

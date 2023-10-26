@@ -4,11 +4,11 @@
         "root": "datasets"
     },
     "model": {
-        "hidden_channels": 300,
-        "num_layers": 5,
+        "hidden_channels": 256,
+        "num_layers": 3,
         "dropout": 0.2,
-        "norm": "none",
-        "in_layer_norm": "none",
+        "norm": "layer_norm",
+        "in_layer_norm": "layer_norm",
         "eps": 0.0,
         "train_eps": false,
         "add_0": true,
@@ -19,15 +19,15 @@
     },
     "train": {
         "seed": 42,
-        "batch_size": 64,
+        "batch_size": 256,
         "cuda": 1,
         "epochs": 150,
-        "lr": 0.001,
+        "lr": 0.0005,
         "adam_beta1": 0.9,
         "adam_beta2": 0.999,
         "adam_eps": 1e-8,
         "l2_penalty": 0.0,
-        "lr_reduce_factor": 0.5,
-        "lr_step_size": 20
+        "lr_reduce_factor": 0.8,
+        "lr_step_size": 10
     }
 }

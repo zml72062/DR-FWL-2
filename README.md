@@ -98,6 +98,16 @@ To run 3-DRFWL(2) GNN on SR25 dataset, execute
 python run_sr.py --num_epochs <num of epochs> --use_3
 ```
 
+## BREC
+
+Before running experiments on BREC, check [the official repository of BREC](https://github.com/GraphPKU/BREC) for additional requirements. Then, download the raw dataset file "brec_v3.npy" from the official repository of BREC, and replace `BREC/Data/raw/brec_v3.npy` with it.
+
+To run 2-DRFWL(2) GNN and 3-DRFWL(2) GNN on BREC dataset, execute
+
+```
+python test_BREC_search.py
+```
+
 ## ogbg-molhiv and ogbg-molpcba
 
 To run 2-DRFWL(2) GNN on ogbg-molhiv/ogbg-molpcba dataset, execute

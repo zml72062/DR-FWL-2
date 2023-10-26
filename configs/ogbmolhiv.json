@@ -4,8 +4,8 @@
         "root": "datasets"
     },
     "model": {
-        "hidden_channels": 64,
-        "num_layers": 2,
+        "hidden_channels": 300,
+        "num_layers": 5,
         "dropout": 0.2,
         "norm": "none",
         "in_layer_norm": "none",
